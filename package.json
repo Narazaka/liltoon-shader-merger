@@ -1,0 +1,9 @@
+{
+  "name": "net.narazaka.liltoon-shader-merger",
+  "version": "0.1.0",
+  "displayName": "lilToon Shader Merger",
+  "description": "Merge multiple lilToon custom shaders into a single combined shader.",
+  "unity": "2022.3",
+  "author": { "name": "Narazaka" },
+  "license": "MIT"
+}
