@@ -1,7 +1,7 @@
 using UnityEditor;
 using UnityEngine;
 
-namespace Narazaka.LilToonShaderMerger
+namespace Narazaka.Unity.LilToonShaderMerger
 {
     public enum ConflictStrategy { ErrorOut, PreferFirst, PreferLast }
     public enum InspectorStrategy { MergeOrSkip }

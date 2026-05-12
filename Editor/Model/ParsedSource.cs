@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Narazaka.LilToonShaderMerger
+namespace Narazaka.Unity.LilToonShaderMerger
 {
     public class CustomHlslData
     {

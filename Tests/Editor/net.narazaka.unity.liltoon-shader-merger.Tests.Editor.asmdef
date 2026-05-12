@@ -1,8 +1,8 @@
 {
-  "name": "net.narazaka.liltoon-shader-merger.Tests.Editor",
+  "name": "net.narazaka.unity.liltoon-shader-merger.Tests.Editor",
   "includePlatforms": ["Editor"],
   "references": [
-    "net.narazaka.liltoon-shader-merger.Editor",
+    "net.narazaka.unity.liltoon-shader-merger.Editor",
     "UnityEngine.TestRunner",
     "UnityEditor.TestRunner"
   ],

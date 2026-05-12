@@ -1,6 +1,6 @@
 using NUnit.Framework;
 
-namespace Narazaka.LilToonShaderMerger.Tests
+namespace Narazaka.Unity.LilToonShaderMerger.Tests
 {
     public class SmokeTest
     {

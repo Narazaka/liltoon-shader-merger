@@ -1,5 +1,5 @@
 {
-  "name": "net.narazaka.liltoon-shader-merger.Editor",
+  "name": "net.narazaka.unity.liltoon-shader-merger.Editor",
   "includePlatforms": ["Editor"],
   "references": [
     "GUID:e7f0f8dffe955d640bbc76d1d4f4986e"

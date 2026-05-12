@@ -2,7 +2,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 
-namespace Narazaka.LilToonShaderMerger.Tests
+namespace Narazaka.Unity.LilToonShaderMerger.Tests
 {
     public class SettingsTests
     {
