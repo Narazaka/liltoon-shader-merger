@@ -14,8 +14,14 @@ namespace Narazaka.Unity.LilToonShaderMerger
         {
             var sb = new StringBuilder();
             sb.AppendLine("#if UNITY_EDITOR");
-            sb.AppendLine("using UnityEditor;");
-            sb.AppendLine("using UnityEngine;");
+            // using directives: 基本 UnityEditor / UnityEngine + 各ソースの using を union
+            var allUsings = new HashSet<string> { "UnityEditor", "UnityEngine" };
+            foreach (var (_, ins) in sources)
+            {
+                if (!ins.PatternMatched) continue;
+                foreach (var u in ins.Usings) allUsings.Add(u);
+            }
+            foreach (var u in allUsings) sb.AppendLine($"using {u};");
             sb.AppendLine();
             sb.AppendLine($"namespace {@namespace}");
             sb.AppendLine("{");
@@ -111,10 +117,58 @@ namespace Narazaka.Unity.LilToonShaderMerger
             sb.AppendLine("        }");
             sb.AppendLine();
 
+            // ExtraMembers (元 inspector の helper method / 非 MaterialProperty field / nested type) をソース毎に統合
+            for (int i = 0; i < sources.Count; i++)
+            {
+                var (key, ins) = sources[i];
+                if (!ins.PatternMatched) continue;
+                if (ins.ExtraMembers.Count == 0) continue;
+                sb.AppendLine($"        // --- Extra members from {key} ---");
+                foreach (var memberText in ins.ExtraMembers)
+                {
+                    foreach (var rawLine in memberText.Replace("\r\n", "\n").TrimEnd('\n').Split('\n'))
+                    {
+                        var trimmed = rawLine.TrimStart();
+                        // プリプロセッサディレクティブ (#region/#endregion/#if/#endif/#else/#elif/#pragma 等) は
+                        // ToFullString() で leading/trailing trivia として混入し対応が崩れるためスキップ
+                        if (trimmed.StartsWith("#region") || trimmed.StartsWith("#endregion") ||
+                            trimmed.StartsWith("#if") || trimmed.StartsWith("#endif") ||
+                            trimmed.StartsWith("#else") || trimmed.StartsWith("#elif") ||
+                            trimmed.StartsWith("#pragma") || trimmed.StartsWith("#define") || trimmed.StartsWith("#undef"))
+                            continue;
+                        sb.AppendLine($"        {trimmed}".TrimEnd());
+                    }
+                }
+                sb.AppendLine();
+            }
+
             // ReplaceToCustomShaders (lilToon テンプレート)
             sb.Append(GenerateReplaceToCustomShaders());
 
             sb.AppendLine("    }");
+
+            // SiblingTypes (同 .cs 内に並列定義された他 class/struct/enum) を namespace ブロック内に追加
+            // (例: FresnelAlphaEx の lilToonFresnelAlphaExEditorSetting)
+            var emittedSiblingNames = new HashSet<string>();
+            foreach (var (key, ins) in sources)
+            {
+                if (!ins.PatternMatched) continue;
+                foreach (var siblingText in ins.SiblingTypes)
+                {
+                    sb.AppendLine();
+                    foreach (var rawLine in siblingText.Replace("\r\n", "\n").TrimEnd('\n').Split('\n'))
+                    {
+                        var trimmed = rawLine.TrimStart();
+                        if (trimmed.StartsWith("#region") || trimmed.StartsWith("#endregion") ||
+                            trimmed.StartsWith("#if") || trimmed.StartsWith("#endif") ||
+                            trimmed.StartsWith("#else") || trimmed.StartsWith("#elif") ||
+                            trimmed.StartsWith("#pragma") || trimmed.StartsWith("#define") || trimmed.StartsWith("#undef"))
+                            continue;
+                        sb.AppendLine($"    {trimmed}".TrimEnd());
+                    }
+                }
+            }
+
             sb.AppendLine("}");
             sb.AppendLine("#endif");
             return sb.ToString();

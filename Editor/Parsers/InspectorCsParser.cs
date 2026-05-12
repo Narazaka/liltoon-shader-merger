@@ -37,29 +37,50 @@ namespace Narazaka.Unity.LilToonShaderMerger
             var nsDecl = root.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault();
             if (nsDecl != null) p.Namespace = nsDecl.Name.ToString();
 
+            // using directive (using static 以外の通常の using のみ)
+            foreach (var u in root.DescendantNodes().OfType<UsingDirectiveSyntax>())
+            {
+                if (u.StaticKeyword.ValueText == "static") continue; // using static は除外
+                if (u.Alias != null) continue;                       // using alias = X.Y; も除外
+                var name = u.Name?.ToString();
+                if (!string.IsNullOrEmpty(name) && !p.Usings.Contains(name))
+                    p.Usings.Add(name);
+            }
+
             // lilToonInspector を継承する class
             var classDecl = root.DescendantNodes().OfType<ClassDeclarationSyntax>()
                 .FirstOrDefault(c => c.BaseList?.Types.Any(t => t.Type.ToString() == "lilToonInspector") == true);
             if (classDecl == null) return p; // PatternMatched=false
 
-            p.ClassName = classDecl.Identifier.ValueText;
+            // 同 .cs 内の他の type (lilToonInspector 継承でない並列 class/struct/enum) を sibling として収集
+            // (例: FresnelAlphaEx の lilToonFresnelAlphaExEditorSetting)
+            foreach (var sibling in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
+            {
+                if (sibling == classDecl) continue;
+                // nested の場合は親が classDecl なら飛ばす (classDecl の ExtraMembers として処理される)
+                if (sibling.Ancestors().OfType<BaseTypeDeclarationSyntax>().Contains(classDecl)) continue;
+                p.SiblingTypes.Add(sibling.ToFullString());
+            }
 
-            bool hasNonCanonical = false;
+            p.ClassName = classDecl.Identifier.ValueText;
 
             foreach (var member in classDecl.Members)
             {
                 switch (member)
                 {
                     case FieldDeclarationSyntax field:
-                        AnalyzeField(field, p, ref hasNonCanonical);
+                        AnalyzeField(field, p);
                         break;
                     case MethodDeclarationSyntax method:
-                        if (!CanonicalMethodNames.Contains(method.Identifier.ValueText))
-                            hasNonCanonical = true;
-                        else if (method.Identifier.ValueText == "LoadCustomProperties")
+                        var mname = method.Identifier.ValueText;
+                        if (mname == "LoadCustomProperties")
                             AnalyzeLoadCustomProperties(method, p);
-                        else if (method.Identifier.ValueText == "DrawCustomProperties")
+                        else if (mname == "DrawCustomProperties")
                             AnalyzeDrawCustomProperties(method, p);
+                        else if (mname == "ReplaceToCustomShaders" || mname == "ConvertMaterialToCustomShaderMenu" || mname == "LoadCustomLanguage")
+                            { /* canonical, skip (merger が再生成する) */ }
+                        else
+                            p.ExtraMembers.Add(method.ToFullString());
                         break;
                     case PropertyDeclarationSyntax _:
                     case ConstructorDeclarationSyntax _:
@@ -68,7 +89,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     case EnumDeclarationSyntax _:
                     case InterfaceDeclarationSyntax _:
                     case DelegateDeclarationSyntax _:
-                        hasNonCanonical = true;
+                        p.ExtraMembers.Add(member.ToFullString());
                         break;
                 }
             }
@@ -77,37 +98,40 @@ namespace Narazaka.Unity.LilToonShaderMerger
             if (!p.IsShowFields.Contains("isShowCustomProperties"))
                 p.IsShowFields.Add("isShowCustomProperties");
 
+            // パターン適合判定: クラス名 + (FindProperty があるか DrawCustomProperties 本体があるか) があれば canonical 部分として組み込む
+            // ExtraMembers の有無は問わない (それらは merger でそのまま統合)
             p.PatternMatched = !string.IsNullOrEmpty(p.ClassName)
-                && (p.FindPropertyNames.Count > 0 || p.DrawCustomPropertiesBodyLines.Count > 0)
-                && !hasNonCanonical;
+                && (p.FindPropertyNames.Count > 0 || p.DrawCustomPropertiesBodyLines.Count > 0);
 
             return p;
         }
 
-        static void AnalyzeField(FieldDeclarationSyntax field, ParsedInspector p, ref bool hasNonCanonical)
+        static void AnalyzeField(FieldDeclarationSyntax field, ParsedInspector p)
         {
             var type = field.Declaration.Type.ToString();
+            bool isCanonical = false;
             foreach (var variable in field.Declaration.Variables)
             {
                 var name = variable.Identifier.ValueText;
                 if (type == "MaterialProperty")
                 {
                     p.MaterialPropertyFields.Add(name);
+                    isCanonical = true;
                 }
                 else if (type == "bool" && name.StartsWith("isShow"))
                 {
                     if (!p.IsShowFields.Contains(name)) p.IsShowFields.Add(name);
+                    isCanonical = true;
                 }
                 else if (type == "string" && name == "shaderName")
                 {
                     if (variable.Initializer?.Value is LiteralExpressionSyntax lit && lit.Token.Value is string s)
                         p.ShaderNameConst = s;
-                }
-                else
-                {
-                    hasNonCanonical = true;
+                    isCanonical = true;
                 }
             }
+            if (!isCanonical)
+                p.ExtraMembers.Add(field.ToFullString());
         }
 
         static void AnalyzeLoadCustomProperties(MethodDeclarationSyntax method, ParsedInspector p)

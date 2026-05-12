@@ -144,6 +144,10 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     WriteAndTrack(result, Path.Combine(editorDir, $"{className}.cs"), mergedInspectorCs);
                     WriteAndTrack(result, Path.Combine(editorDir, $"{className}.Editor.asmdef"),
                         AsmdefEmitter.Emit($"{className}.Editor", FindLilToonEditorGuid()));
+
+                    // Inspector .cs の同フォルダ内の sibling .cs (helper class 等) を出力側にコピー
+                    // 例: HawaseGimmickShader の GUI_keys.cs / GUI_labels.cs (namespace KuukuuVirtualFactory.HawaseGimmickShader)
+                    CopySiblingInspectorScripts(parsed, editorDir, result);
                 }
 
                 AssetDatabase.Refresh();
@@ -165,6 +169,41 @@ namespace Narazaka.Unity.LilToonShaderMerger
         {
             File.WriteAllText(path, content);
             r.WrittenFiles.Add(path);
+        }
+
+        // Inspector .cs の同フォルダ内の sibling .cs (helper class 等) を merged Inspector の Editor フォルダにコピー
+        // Inspector が lilToonInspector を継承する class なら、それと同居する helper .cs を持ってこないと参照が解決しない
+        static void CopySiblingInspectorScripts(List<ParsedSource> parsed, string outEditorDir, BuildResult result)
+        {
+            var copiedNames = new Dictionary<string, string>(); // filename → sourceKey
+            foreach (var p in parsed)
+            {
+                if (p.Inspector == null || !p.Inspector.PatternMatched) continue;
+                if (string.IsNullOrEmpty(p.Inspector.InspectorCsPath)) continue;
+                var dir = Path.GetDirectoryName(p.Inspector.InspectorCsPath);
+                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
+                var inspectorFile = Path.GetFileName(p.Inspector.InspectorCsPath);
+                foreach (var f in Directory.GetFiles(dir, "*.cs"))
+                {
+                    var name = Path.GetFileName(f);
+                    if (name == inspectorFile) continue; // 本体 Inspector はスキップ (merged class 側で扱う)
+
+                    if (copiedNames.TryGetValue(name, out var prevKey) && prevKey != p.SourceKey)
+                    {
+                        result.Diagnostics.Add(new Diagnostic
+                        {
+                            Severity = Severity.Warning,
+                            Category = "inspector-sibling",
+                            Message = $"sibling .cs '{name}' collision between {prevKey} and {p.SourceKey}; using {prevKey} (first wins)"
+                        });
+                        continue;
+                    }
+                    var dest = Path.Combine(outEditorDir, name);
+                    File.Copy(f, dest, true);
+                    result.WrittenFiles.Add(dest);
+                    copiedNames[name] = p.SourceKey;
+                }
+            }
         }
 
         // テンプレートに含まれない HLSL/その他のファイルを検出し、copyExtraFiles=true ならコピー
@@ -297,7 +336,11 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     if (ms == null) continue;
                     var cls = ms.GetClass();
                     if (cls != null && cls == t)
-                        return InspectorCsParser.Parse(File.ReadAllText(path));
+                    {
+                        var parsed = InspectorCsParser.Parse(File.ReadAllText(path));
+                        parsed.InspectorCsPath = path;
+                        return parsed;
+                    }
                 }
             }
             return null;
