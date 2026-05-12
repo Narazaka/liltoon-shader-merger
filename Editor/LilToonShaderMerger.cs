@@ -132,6 +132,9 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     WriteAndTrack(result, Path.Combine(outFolder, fn), merged);
                 }
 
+                // テンプレ外ファイル (extra .hlsl 等) の検出
+                CopyOrWarnExtraFiles(parsed, outFolder, s.copyExtraFiles, result);
+
                 // Inspector
                 if (mergedInspectorCs != null)
                 {
@@ -162,6 +165,58 @@ namespace Narazaka.Unity.LilToonShaderMerger
         {
             File.WriteAllText(path, content);
             r.WrittenFiles.Add(path);
+        }
+
+        // テンプレートに含まれない HLSL/その他のファイルを検出し、copyExtraFiles=true ならコピー
+        static readonly HashSet<string> CanonicalFiles = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase)
+        {
+            "custom.hlsl", "custom_insert.hlsl",
+            "lilCustomShaderProperties.lilblock",
+            "lilCustomShaderInsert.lilblock",
+            "lilCustomShaderDatas.lilblock",
+        };
+
+        static void CopyOrWarnExtraFiles(List<ParsedSource> parsed, string outFolder, bool copyExtras, BuildResult result)
+        {
+            var copiedNames = new Dictionary<string, string>(); // name → first sourceKey copied
+            foreach (var p in parsed)
+            {
+                if (!Directory.Exists(p.FolderPath)) continue;
+                foreach (var f in Directory.GetFiles(p.FolderPath))
+                {
+                    var name = Path.GetFileName(f);
+                    if (name.EndsWith(".meta", System.StringComparison.OrdinalIgnoreCase)) continue;
+                    if (name.EndsWith(".lilcontainer", System.StringComparison.OrdinalIgnoreCase)) continue;
+                    if (CanonicalFiles.Contains(name)) continue;
+
+                    if (copyExtras)
+                    {
+                        if (copiedNames.TryGetValue(name, out var prevKey) && prevKey != p.SourceKey)
+                        {
+                            result.Diagnostics.Add(new Diagnostic
+                            {
+                                Severity = Severity.Warning,
+                                Category = "extra-file",
+                                Message = $"extra file '{name}' name collision between {prevKey} and {p.SourceKey}; using {prevKey} (first wins)"
+                            });
+                            continue;
+                        }
+                        var dest = Path.Combine(outFolder, name);
+                        File.Copy(f, dest, true);
+                        result.WrittenFiles.Add(dest);
+                        copiedNames[name] = p.SourceKey;
+                    }
+                    else
+                    {
+                        result.Diagnostics.Add(new Diagnostic
+                        {
+                            Severity = Severity.Warning,
+                            Category = "extra-file",
+                            Message = $"extra file '{name}' in {p.SourceKey} not copied (set copyExtraFiles=true to include). Merged shader may fail to compile if it references this file."
+                        });
+                    }
+                }
+            }
         }
 
         static bool HasErrors(List<Diagnostic> diags)

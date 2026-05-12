@@ -24,6 +24,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
                 AssetDatabase.LoadAssetAtPath<DefaultAsset>("Packages/jp.sigmal00.uzumore-shader/Runtime/Shaders"),
             };
             settings.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(OutFolder);
+            settings.copyExtraFiles = true;
 
             Debug.Log("[MotchiriUzumoreBuild] starting Build");
             var result = LilToonShaderMerger.Build(settings);
@@ -32,6 +33,22 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             foreach (var f in result.WrittenFiles) Debug.Log("[MotchiriUzumoreBuild] wrote: " + Path.GetFileName(f));
 
             Object.DestroyImmediate(settings);
+        }
+
+        [MenuItem("Tools/lilToon Shader Merger/Test/Try Find Merged Shader")]
+        public static void TryFindShader()
+        {
+            string[] candidates = {
+                "Merged/MotchiriUzumore/lilToon",
+                "Hidden/Merged/MotchiriUzumore/Cutout",
+                "Hidden/Merged/MotchiriUzumore/Transparent",
+                "Merged/MotchiriUzumore/lilToonMulti",
+            };
+            foreach (var n in candidates)
+            {
+                var sh = Shader.Find(n);
+                Debug.Log($"[FindShader] '{n}' -> {(sh ? "FOUND" : "NULL")}");
+            }
         }
     }
 }
