@@ -13,8 +13,9 @@ namespace Narazaka.Unity.LilToonShaderMerger
         static readonly Regex MaterialPropertyField = new Regex(
             @"MaterialProperty\s+(_?\w+)\s*;",
             RegexOptions.Compiled);
-        static readonly Regex FindProperty = new Regex(
-            @"FindProperty\s*\(\s*""([^""]+)""\s*,\s*props\s*\)",
+        // <field> = FindProperty("<propName>", props);
+        static readonly Regex FindPropertyAssignment = new Regex(
+            @"(_?\w+)\s*=\s*FindProperty\s*\(\s*""([^""]+)""\s*,\s*props\s*\)\s*;",
             RegexOptions.Compiled);
         static readonly Regex FoldoutCall = new Regex(
             @"Foldout\s*\(\s*""([^""]+)""",
@@ -34,8 +35,13 @@ namespace Narazaka.Unity.LilToonShaderMerger
             var sm = ShaderNameConst.Match(source);
             if (sm.Success) p.ShaderNameConst = sm.Groups[1].Value;
 
-            foreach (Match m in MaterialPropertyField.Matches(source))
-                p.MaterialPropertyFields.Add(m.Groups[1].Value);
+            // MaterialProperty フィールド抽出 (コメントアウト行を除外)
+            foreach (var rawLine in source.Replace("\r\n", "\n").Split('\n'))
+            {
+                if (rawLine.TrimStart().StartsWith("//")) continue;
+                foreach (Match m in MaterialPropertyField.Matches(rawLine))
+                    p.MaterialPropertyFields.Add(m.Groups[1].Value);
+            }
 
             // DrawCustomProperties メソッド本文を切り出し
             int drawIdx = source.IndexOf("DrawCustomProperties");
@@ -55,12 +61,16 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     foreach (var ln in body.Replace("\r\n", "\n").Split('\n'))
                         p.DrawCustomPropertiesBodyLines.Add(ln);
 
-                    var fm = FoldoutCall.Match(body);
-                    if (fm.Success) p.FoldoutTitle = fm.Groups[1].Value;
+                    foreach (var ln in body.Replace("\r\n", "\n").Split('\n'))
+                    {
+                        if (ln.TrimStart().StartsWith("//")) continue;
+                        var fm = FoldoutCall.Match(ln);
+                        if (fm.Success) { p.FoldoutTitle = fm.Groups[1].Value; break; }
+                    }
                 }
             }
 
-            // LoadCustomProperties メソッド本文から FindProperty 抽出
+            // LoadCustomProperties メソッド本文から FindProperty 代入を抽出 (コメントアウト行を除外)
             int loadIdx = source.IndexOf("LoadCustomProperties");
             if (loadIdx >= 0)
             {
@@ -75,8 +85,18 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         end++;
                     }
                     var body = source.Substring(openBrace + 1, end - openBrace - 2);
-                    foreach (Match m in FindProperty.Matches(body))
-                        p.FindPropertyNames.Add(m.Groups[1].Value);
+                    foreach (var ln in body.Replace("\r\n", "\n").Split('\n'))
+                    {
+                        if (ln.TrimStart().StartsWith("//")) continue;
+                        var m = FindPropertyAssignment.Match(ln);
+                        if (m.Success)
+                        {
+                            var field = m.Groups[1].Value;
+                            var propName = m.Groups[2].Value;
+                            p.FindPropertyNames.Add(propName);
+                            p.FieldToPropertyName[field] = propName;
+                        }
+                    }
                 }
             }
 

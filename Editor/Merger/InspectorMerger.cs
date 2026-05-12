@@ -51,13 +51,14 @@ namespace Narazaka.Unity.LilToonShaderMerger
             sb.AppendLine("            isCustomShader = true;");
             sb.AppendLine("            ReplaceToCustomShaders();");
             sb.AppendLine("            isShowRenderMode = !material.shader.name.Contains(\"Optional\");");
+            // <field> = FindProperty("<propName>", props); 形式で代入 (元 inspector の field/property 関係を尊重)
             var loadedFields = new HashSet<string>();
             foreach (var (key, ins) in sources)
             {
                 if (!ins.PatternMatched) continue;
-                foreach (var n in ins.FindPropertyNames)
-                    if (loadedFields.Add(n))
-                        sb.AppendLine($"            {n} = FindProperty(\"{n}\", props);");
+                foreach (var kv in ins.FieldToPropertyName)
+                    if (loadedFields.Add(kv.Key))
+                        sb.AppendLine($"            {kv.Key} = FindProperty(\"{kv.Value}\", props);");
             }
             sb.AppendLine("        }");
             sb.AppendLine();

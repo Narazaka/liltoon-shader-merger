@@ -227,15 +227,18 @@ namespace Narazaka.Unity.LilToonShaderMerger
             if (baseType == null) return null;
             foreach (var t in TypeCache.GetTypesDerivedFrom(baseType))
             {
-                if (t.FullName == editorName)
+                if (t.FullName != editorName) continue;
+
+                // クラス名とファイル名が一致しないケースがある (例: motchiriInspector が CustomInspector.cs 内)
+                // すべての MonoScript を走査し GetClass() で一致確認
+                foreach (var guid in AssetDatabase.FindAssets("t:MonoScript"))
                 {
-                    var scripts = AssetDatabase.FindAssets($"{t.Name} t:MonoScript");
-                    foreach (var guid in scripts)
-                    {
-                        var path = AssetDatabase.GUIDToAssetPath(guid);
-                        if (path.EndsWith(".cs"))
-                            return InspectorCsParser.Parse(File.ReadAllText(path));
-                    }
+                    var path = AssetDatabase.GUIDToAssetPath(guid);
+                    var ms = AssetDatabase.LoadAssetAtPath<MonoScript>(path);
+                    if (ms == null) continue;
+                    var cls = ms.GetClass();
+                    if (cls != null && cls == t)
+                        return InspectorCsParser.Parse(File.ReadAllText(path));
                 }
             }
             return null;

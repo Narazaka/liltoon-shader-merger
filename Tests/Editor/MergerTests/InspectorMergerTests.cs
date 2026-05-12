@@ -12,6 +12,8 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
                 FoldoutTitle="motchiri Settings" };
             a.MaterialPropertyFields.Add("_Mask"); a.MaterialPropertyFields.Add("_strength");
             a.FindPropertyNames.Add("_Mask"); a.FindPropertyNames.Add("_strength");
+            a.FieldToPropertyName["_Mask"] = "_Mask";
+            a.FieldToPropertyName["_strength"] = "_strength";
             a.DrawCustomPropertiesBodyLines.Add("isShowCustomProperties = Foldout(\"motchiri Settings\", \"motchiri Settings\", isShowCustomProperties);");
             a.DrawCustomPropertiesBodyLines.Add("if(isShowCustomProperties){");
             a.DrawCustomPropertiesBodyLines.Add("m_MaterialEditor.ShaderProperty(_Mask, \"Mask\");");
@@ -21,6 +23,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
                 FoldoutTitle="埋もれ設定" };
             b.MaterialPropertyFields.Add("_UzumoreAmount");
             b.FindPropertyNames.Add("_UzumoreAmount");
+            b.FieldToPropertyName["_UzumoreAmount"] = "_UzumoreAmount";
             b.DrawCustomPropertiesBodyLines.Add("isShowCustomProperties = Foldout(\"埋もれ設定\", \"埋もれ設定\", isShowCustomProperties);");
 
             var diags = new List<Diagnostic>();
@@ -50,6 +53,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             var a = new ParsedInspector { PatternMatched = true, ClassName="A" };
             a.MaterialPropertyFields.Add("_x");
             a.FindPropertyNames.Add("_x");
+            a.FieldToPropertyName["_x"] = "_x";
             var b = new ParsedInspector { PatternMatched = false };
             var diags = new List<Diagnostic>();
             var code = InspectorMerger.Generate(

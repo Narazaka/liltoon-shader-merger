@@ -39,6 +39,8 @@ namespace Narazaka.Unity.LilToonShaderMerger
         public string Namespace { get; set; } = "lilToon";
         public List<string> MaterialPropertyFields { get; } = new List<string>();
         public List<string> FindPropertyNames { get; } = new List<string>();
+        // field 名 → shader property 名 (FindProperty 代入文から抽出)
+        public Dictionary<string, string> FieldToPropertyName { get; } = new Dictionary<string, string>();
         public List<string> DrawCustomPropertiesBodyLines { get; } = new List<string>();
         public string FoldoutTitle { get; set; } = "Custom Properties";
     }
