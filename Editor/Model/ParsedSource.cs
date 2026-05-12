@@ -41,6 +41,8 @@ namespace Narazaka.Unity.LilToonShaderMerger
         public List<string> FindPropertyNames { get; } = new List<string>();
         // field 名 → shader property 名 (FindProperty 代入文から抽出)
         public Dictionary<string, string> FieldToPropertyName { get; } = new Dictionary<string, string>();
+        // private static bool isShow* フィールド (Foldout 状態変数。 merged 後にソース毎に一意化される)
+        public List<string> IsShowFields { get; } = new List<string>();
         public List<string> DrawCustomPropertiesBodyLines { get; } = new List<string>();
         public string FoldoutTitle { get; set; } = "Custom Properties";
     }

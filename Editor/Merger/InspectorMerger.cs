@@ -41,22 +41,27 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         sb.AppendLine($"        MaterialProperty {f};");
             }
             sb.AppendLine();
-            // セクション毎に独立した isShow フィールド (元 inspector の isShowCustomProperties をリネーム)
-            // sources の index ベースで一意な field 名を生成 (SourceKey が衝突しても OK)
-            var sectionFieldNames = new string[sources.Count];
+            // セクション毎に元 inspector の isShow* 系を全てリネーム宣言
+            // sectionFieldRewrites[i] = {originalName → renamedName} for source i
+            var sectionFieldRewrites = new Dictionary<string, string>[sources.Count];
             var usedFieldNames = new HashSet<string>();
             for (int i = 0; i < sources.Count; i++)
             {
                 var (key, ins) = sources[i];
                 if (!ins.PatternMatched) continue;
                 var baseIdent = SafeIdent(string.IsNullOrEmpty(ins.ClassName) ? key : ins.ClassName);
-                var fieldName = $"isShow_{baseIdent}";
-                int suffix = 1;
-                while (usedFieldNames.Contains(fieldName))
-                    fieldName = $"isShow_{baseIdent}_{suffix++}";
-                usedFieldNames.Add(fieldName);
-                sectionFieldNames[i] = fieldName;
-                sb.AppendLine($"        private static bool {fieldName};");
+                var rewriteMap = new Dictionary<string, string>();
+                foreach (var original in ins.IsShowFields)
+                {
+                    var renamed = $"isShow_{baseIdent}_{original}";
+                    int suffix = 1;
+                    while (usedFieldNames.Contains(renamed))
+                        renamed = $"isShow_{baseIdent}_{original}_{suffix++}";
+                    usedFieldNames.Add(renamed);
+                    rewriteMap[original] = renamed;
+                    sb.AppendLine($"        private static bool {renamed};");
+                }
+                sectionFieldRewrites[i] = rewriteMap;
             }
             sb.AppendLine($"        private const string shaderName = \"{newShaderName}\";");
             sb.AppendLine();
@@ -79,24 +84,27 @@ namespace Narazaka.Unity.LilToonShaderMerger
             sb.AppendLine("        }");
             sb.AppendLine();
 
-            // DrawCustomProperties: 各セクションの body 中の `isShowCustomProperties` を専用フィールドに書き換え
+            // DrawCustomProperties: 各セクションの body 中の isShow* フィールドを section 毎にリネーム
             sb.AppendLine("        protected override void DrawCustomProperties(Material material)");
             sb.AppendLine("        {");
             for (int i = 0; i < sources.Count; i++)
             {
                 var (key, ins) = sources[i];
                 if (!ins.PatternMatched) continue;
-                var fieldName = sectionFieldNames[i];
+                var rewriteMap = sectionFieldRewrites[i];
                 sb.AppendLine($"            // --- {key} ---");
                 foreach (var line in ins.DrawCustomPropertiesBodyLines)
                 {
                     var trimmed = line.TrimEnd();
                     if (string.IsNullOrWhiteSpace(trimmed)) continue;
-                    // isShowCustomProperties (識別子境界付き) を section field に置換
-                    var rewritten = System.Text.RegularExpressions.Regex.Replace(
-                        trimmed.TrimStart(),
-                        @"\bisShowCustomProperties\b",
-                        fieldName);
+                    var rewritten = trimmed.TrimStart();
+                    foreach (var kv in rewriteMap)
+                    {
+                        rewritten = System.Text.RegularExpressions.Regex.Replace(
+                            rewritten,
+                            @"\b" + System.Text.RegularExpressions.Regex.Escape(kv.Key) + @"\b",
+                            kv.Value);
+                    }
                     sb.AppendLine($"            {rewritten}");
                 }
             }

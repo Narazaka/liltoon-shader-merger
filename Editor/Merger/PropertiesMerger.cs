@@ -10,12 +10,14 @@ namespace Narazaka.Unity.LilToonShaderMerger
             ConflictStrategy strategy,
             List<Diagnostic> diags)
         {
-            // 衝突検出
+            // 衝突検出: 異なるソース間のプロパティ名重複のみ衝突扱い (同一ソース内重複は Unity 自体が許容するので無視)
             var seen = new Dictionary<string, string>(); // name → sourceKey
             foreach (var (key, p) in sources)
             {
+                var localSeen = new HashSet<string>();
                 foreach (var name in p.PropertyNames)
                 {
+                    if (!localSeen.Add(name)) continue;  // 同一ソース内重複はスキップ
                     if (seen.TryGetValue(name, out var prevKey))
                     {
                         var d = new Diagnostic
