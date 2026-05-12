@@ -6,9 +6,9 @@
     "UnityEngine.TestRunner",
     "UnityEditor.TestRunner"
   ],
-  "optionalUnityReferences": ["TestAssemblies"],
   "autoReferenced": false,
-  "defineConstraints": [],
+  "overrideReferences": true,
+  "defineConstraints": ["UNITY_INCLUDE_TESTS"],
   "precompiledReferences": [
     "nunit.framework.dll"
   ]
