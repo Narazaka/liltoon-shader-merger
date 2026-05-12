@@ -57,5 +57,35 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             var d = CustomHlslParser.Parse(input);
             Assert.That(d.MultilineMacros.ContainsKey("LIL_CUSTOM_PROPERTIES"), Is.False);
         }
+
+        [Test]
+        public void Parse_ExtractsLilRequireApp_Flags()
+        {
+            const string input = @"
+#define LIL_REQUIRE_APP_POSITION
+#define LIL_REQUIRE_APP_NORMAL
+//#define LIL_REQUIRE_APP_COLOR
+";
+            var d = CustomHlslParser.Parse(input);
+            Assert.That(d.FlagMacros, Contains.Item("LIL_REQUIRE_APP_POSITION"));
+            Assert.That(d.FlagMacros, Contains.Item("LIL_REQUIRE_APP_NORMAL"));
+            Assert.That(d.FlagMacros, Does.Not.Contain("LIL_REQUIRE_APP_COLOR"));
+        }
+
+        [Test]
+        public void Parse_ExtractsLilV2FForce_Flags()
+        {
+            const string input = "#define LIL_V2F_FORCE_TEXCOORD2";
+            var d = CustomHlslParser.Parse(input);
+            Assert.That(d.FlagMacros, Contains.Item("LIL_V2F_FORCE_TEXCOORD2"));
+        }
+
+        [Test]
+        public void Parse_ExtractsLilCustomVertCopy_Flag()
+        {
+            const string input = "#define LIL_CUSTOM_VERT_COPY";
+            var d = CustomHlslParser.Parse(input);
+            Assert.That(d.FlagMacros, Contains.Item("LIL_CUSTOM_VERT_COPY"));
+        }
     }
 }
