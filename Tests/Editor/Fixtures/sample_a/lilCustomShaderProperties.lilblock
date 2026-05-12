@@ -1,0 +1,2 @@
+_SampleA("SampleA", range(0.0,1.0)) = 0.5
+_SampleAMask("SampleA Mask", 2D) = "white" {}

@@ -1,0 +1,13 @@
+Shader "*LIL_SHADER_NAME*/lilToon"
+{
+    Properties
+    {
+        lilProperties "Default"
+        lilProperties "DefaultOpaque"
+        lilProperties "lilCustomShaderProperties.lilblock"
+    }
+    lilPassShaderName "Hidden/*LIL_SHADER_NAME*/ltspass_opaque"
+    lilSubShaderTags {"RenderType" = "Opaque" "Queue" = "Geometry"}
+    lilSubShaderBRP "DefaultUsePass"
+    CustomEditor "*LIL_EDITOR_NAME*"
+}
