@@ -250,7 +250,6 @@ namespace Narazaka.Unity.LilToonShaderMerger
             }
             var src = new ParsedSource
             {
-                SourceKey = Path.GetFileName(folder.TrimEnd('/', '\\')),
                 FolderPath = folder,
                 Hlsl = new CustomHlslData(),
                 Datas = new CustomShaderDatas(),
@@ -262,6 +261,11 @@ namespace Narazaka.Unity.LilToonShaderMerger
 
             var datas = Path.Combine(folder, "lilCustomShaderDatas.lilblock");
             if (File.Exists(datas)) src.Datas = LilBlockParser.ParseDatas(File.ReadAllText(datas));
+
+            // SourceKey: 優先順 = ShaderName (Datas) > フォルダ名 (フォルダが "Shaders" 等で衝突しやすいのを避ける)
+            src.SourceKey = !string.IsNullOrEmpty(src.Datas.ShaderName)
+                ? src.Datas.ShaderName
+                : Path.GetFileName(folder.TrimEnd('/', '\\'));
 
             var props = Path.Combine(folder, "lilCustomShaderProperties.lilblock");
             if (File.Exists(props)) src.Properties = LilBlockParser.ParseProperties(File.ReadAllText(props));
