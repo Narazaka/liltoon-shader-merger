@@ -5,14 +5,20 @@ namespace Narazaka.Unity.LilToonShaderMerger
 {
     public static class CustomHlslParser
     {
-        // 行頭 (空白許容) で // 始まりでない `#define <NAME> \` をマッチ
+        // 行頭 (空白許容) で // 始まりでない `#define <NAME> \` (multi-line macro head)
+        // NAME パターンを限定せず任意の C 識別子を許容 (ソース固有 helper macro も拾う)
         static readonly Regex MultilineHead = new Regex(
-            @"^(?<indent>[\t ]*)#define\s+(?<name>LIL_[A-Z0-9_]+|BEFORE_[A-Z0-9_]+|OVERRIDE_[A-Z0-9_]+)\s+\\\s*$",
+            @"^(?<indent>[\t ]*)#define\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s+\\\s*$",
             RegexOptions.Compiled);
 
-        // フラグ系: `#define <NAME>` (本体なし、 行末に \ なし)
-        static readonly Regex FlagDefine = new Regex(
-            @"^(?<indent>[\t ]*)#define\s+(?<name>LIL_REQUIRE_APP_[A-Z0-9_]+|LIL_V2F_FORCE_[A-Z0-9_]+|LIL_CUSTOM_VERT_COPY)\s*$",
+        // 単一行 #define: `#define NAME` (body なし) or `#define NAME VALUE` (body あり、 1 行で完結)
+        static readonly Regex SingleLineDefine = new Regex(
+            @"^(?<indent>[\t ]*)#define\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)(?:\s+(?<value>[^\\]*?))?\s*$",
+            RegexOptions.Compiled);
+
+        // フラグ系 (本体なし) の lilToon 公式パターン名 (これらは FlagMacros として記録)
+        static readonly Regex FlagDefineName = new Regex(
+            @"^(?:LIL_REQUIRE_APP_[A-Z0-9_]+|LIL_V2F_FORCE_[A-Z0-9_]+|LIL_CUSTOM_VERT_COPY)$",
             RegexOptions.Compiled);
 
         public static CustomHlslData Parse(string source)
@@ -49,10 +55,21 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     continue;
                 }
 
-                var f = FlagDefine.Match(line);
-                if (f.Success)
+                var s = SingleLineDefine.Match(line);
+                if (s.Success)
                 {
-                    data.FlagMacros.Add(f.Groups["name"].Value);
+                    var name = s.Groups["name"].Value;
+                    var value = s.Groups["value"].Value ?? "";
+                    if (FlagDefineName.IsMatch(name))
+                    {
+                        // lilToon 公式フラグマクロ
+                        data.FlagMacros.Add(name);
+                    }
+                    else
+                    {
+                        // ソース固有 #define (constant, FLAG, etc.)
+                        data.ExtraDefines[name] = value.TrimEnd();
+                    }
                 }
             }
 

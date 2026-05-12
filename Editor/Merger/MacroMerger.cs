@@ -23,6 +23,29 @@ namespace Narazaka.Unity.LilToonShaderMerger
                 foreach (var f in s.FlagMacros)
                     merged.FlagMacros.Add(f);
 
+            // ExtraDefines (ソース固有 #define): 同名で body 一致なら dedup、 違えば衝突戦略
+            foreach (var s in sources)
+            {
+                foreach (var kv in s.ExtraDefines)
+                {
+                    if (merged.ExtraDefines.TryGetValue(kv.Key, out var prevVal))
+                    {
+                        if (prevVal == kv.Value) continue;  // 完全一致 → スキップ
+                        var d = new Diagnostic
+                        {
+                            Category = "define",
+                            Message = $"#define {kv.Key} differs across sources: '{prevVal}' vs '{kv.Value}'",
+                            Severity = overrideStrategy == ConflictStrategy.ErrorOut ? Severity.Error : Severity.Warning
+                        };
+                        diags.Add(d);
+                        if (overrideStrategy == ConflictStrategy.PreferLast)
+                            merged.ExtraDefines[kv.Key] = kv.Value;
+                        // PreferFirst / ErrorOut は既存を保持
+                    }
+                    else merged.ExtraDefines[kv.Key] = kv.Value;
+                }
+            }
+
             // 複数行マクロ
             foreach (var s in sources)
             {
@@ -70,12 +93,28 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     }
                     else
                     {
-                        // 未分類マクロは chain にフォールバック
-                        existing.AddRange(body);
+                        // ソース固有 helper macro (PRECALCEDUV 等): 同じ body なら dedup、 異なれば衝突戦略
+                        if (BodyEquals(existing, body)) continue;
+                        var d = new Diagnostic
+                        {
+                            Category = "macro",
+                            Message = $"#define {name} (multi-line) differs across sources",
+                            Severity = overrideStrategy == ConflictStrategy.ErrorOut ? Severity.Error : Severity.Warning
+                        };
+                        diags.Add(d);
+                        if (overrideStrategy == ConflictStrategy.PreferLast)
+                            merged.MultilineMacros[name] = new List<string>(body);
                     }
                 }
             }
             return merged;
+        }
+
+        static bool BodyEquals(List<string> a, List<string> b)
+        {
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++) if (a[i] != b[i]) return false;
+            return true;
         }
     }
 }

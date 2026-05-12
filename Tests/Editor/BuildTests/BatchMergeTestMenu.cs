@@ -66,6 +66,41 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             WriteSummary(summary.ToString());
         }
 
+        [MenuItem("Tools/lilToon Shader Merger/Test/Verify Merged Shaders Compile")]
+        public static void VerifyShaderCompile()
+        {
+            var summary = new StringBuilder("=== Shader Compile Verify ===\n");
+            if (!AssetDatabase.IsValidFolder(OutRoot))
+            {
+                Debug.LogWarning("[BatchMerge] no batch output to verify");
+                return;
+            }
+            // 出力サブフォルダ毎に lts.lilcontainer (top-level) を Shader.Find して null 以外を確認
+            foreach (var sub in Directory.GetDirectories(Application.dataPath + "/_batch_merge_tests"))
+            {
+                var name = Path.GetFileName(sub);
+                var shaderName = $"BatchMerge/{name}/lilToon";
+                var sh = Shader.Find(shaderName);
+                summary.AppendLine($"  {name}: '{shaderName}' -> {(sh ? "FOUND" : "NULL")}");
+                if (sh != null)
+                {
+                    // ShaderUtil.GetShaderMessages で compile messages を取得
+                    var msgs = UnityEditor.ShaderUtil.GetShaderMessages(sh);
+                    int errs = 0, warns = 0;
+                    foreach (var m in msgs)
+                    {
+                        if (m.severity == UnityEditor.Rendering.ShaderCompilerMessageSeverity.Error) errs++;
+                        else warns++;
+                    }
+                    summary.AppendLine($"    compile messages: {errs} errors, {warns} warnings");
+                    foreach (var m in msgs)
+                        summary.AppendLine($"    [{m.severity}] {m.platform}: {m.message.Substring(0, System.Math.Min(120, m.message.Length))}");
+                }
+            }
+            File.WriteAllText(SummaryFile.Replace("Assets/", Application.dataPath + "/"), summary.ToString());
+            Debug.Log(summary.ToString());
+        }
+
         [MenuItem("Tools/lilToon Shader Merger/Test/Clean Batch Output")]
         public static void Clean()
         {

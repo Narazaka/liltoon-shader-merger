@@ -8,6 +8,8 @@ namespace Narazaka.Unity.LilToonShaderMerger
         public Dictionary<string, List<string>> MultilineMacros { get; } = new Dictionary<string, List<string>>();
         // フラグ系マクロ (本体なし)。 例: "LIL_REQUIRE_APP_POSITION"
         public HashSet<string> FlagMacros { get; } = new HashSet<string>();
+        // ソース固有のシンプル #define (例: "K2S_DCS_VMATRIXTEXTURERESOLUTION" → "4", "LIL_FEATURE_DECAL" → "")
+        public Dictionary<string, string> ExtraDefines { get; } = new Dictionary<string, string>();
     }
 
     public class CustomShaderDatas

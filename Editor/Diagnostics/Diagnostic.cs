@@ -13,5 +13,6 @@ namespace Narazaka.Unity.LilToonShaderMerger
     {
         public System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>> MultilineMacros { get; } = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>>();
         public System.Collections.Generic.HashSet<string> FlagMacros { get; } = new System.Collections.Generic.HashSet<string>();
+        public System.Collections.Generic.Dictionary<string, string> ExtraDefines { get; } = new System.Collections.Generic.Dictionary<string, string>();
     }
 }
