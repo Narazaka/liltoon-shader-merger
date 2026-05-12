@@ -31,6 +31,18 @@ namespace Narazaka.Unity.LilToonShaderMerger
         public List<string> PropertyNames { get; } = new List<string>();
     }
 
+    public class ParsedInspector
+    {
+        public bool PatternMatched { get; set; }
+        public string ShaderNameConst { get; set; } = "";
+        public string ClassName { get; set; } = "";
+        public string Namespace { get; set; } = "lilToon";
+        public List<string> MaterialPropertyFields { get; } = new List<string>();
+        public List<string> FindPropertyNames { get; } = new List<string>();
+        public List<string> DrawCustomPropertiesBodyLines { get; } = new List<string>();
+        public string FoldoutTitle { get; set; } = "Custom Properties";
+    }
+
     public class ParsedSource
     {
         public string SourceKey { get; set; }    // 識別子 (フォルダ名等)
@@ -39,5 +51,6 @@ namespace Narazaka.Unity.LilToonShaderMerger
         public CustomShaderDatas Datas { get; set; }
         public CustomProperties Properties { get; set; }
         public string InsertBlockText { get; set; }
+        public ParsedInspector Inspector { get; set; }
     }
 }
