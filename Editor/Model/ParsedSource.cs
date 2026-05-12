@@ -25,11 +25,19 @@ namespace Narazaka.Unity.LilToonShaderMerger
         public string To { get; set; }
     }
 
+    public class CustomProperties
+    {
+        public string RawText { get; set; } = "";
+        public List<string> PropertyNames { get; } = new List<string>();
+    }
+
     public class ParsedSource
     {
         public string SourceKey { get; set; }    // 識別子 (フォルダ名等)
         public string FolderPath { get; set; }
         public CustomHlslData Hlsl { get; set; }
         public CustomShaderDatas Datas { get; set; }
+        public CustomProperties Properties { get; set; }
+        public string InsertBlockText { get; set; }
     }
 }

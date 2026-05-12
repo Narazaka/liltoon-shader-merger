@@ -56,5 +56,21 @@ namespace Narazaka.Unity.LilToonShaderMerger
             }
             return d;
         }
+
+        // 行頭 (空白 + 任意の [Decorator] 列のあと) のプロパティ名 _xxx をマッチ
+        static readonly Regex PropertyName = new Regex(
+            @"^\s*(?:\[[^\]]+\]\s*)*(_[A-Za-z0-9_]+)\s*\(",
+            RegexOptions.Compiled);
+
+        public static CustomProperties ParseProperties(string source)
+        {
+            var p = new CustomProperties { RawText = source };
+            foreach (var rawLine in source.Replace("\r\n", "\n").Split('\n'))
+            {
+                var m = PropertyName.Match(rawLine);
+                if (m.Success) p.PropertyNames.Add(m.Groups[1].Value);
+            }
+            return p;
+        }
     }
 }
