@@ -10,10 +10,26 @@ namespace Narazaka.Unity.LilToonShaderMerger
         public HashSet<string> FlagMacros { get; } = new HashSet<string>();
     }
 
+    public class CustomShaderDatas
+    {
+        public string ShaderName { get; set; } = "";
+        public string EditorName { get; set; } = "";
+        public List<ReplaceDirective> Replaces { get; } = new List<ReplaceDirective>();
+        public Dictionary<string, string> Inserts { get; } = new Dictionary<string, string>();
+    }
+
+    public class ReplaceDirective
+    {
+        public string Filter { get; set; }
+        public string From { get; set; }
+        public string To { get; set; }
+    }
+
     public class ParsedSource
     {
         public string SourceKey { get; set; }    // 識別子 (フォルダ名等)
         public string FolderPath { get; set; }
         public CustomHlslData Hlsl { get; set; }
+        public CustomShaderDatas Datas { get; set; }
     }
 }
