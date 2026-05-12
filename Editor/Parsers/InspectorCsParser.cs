@@ -1,35 +1,18 @@
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
+using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Narazaka.Unity.LilToonShaderMerger
 {
+    /// <summary>
+    /// lilToon CustomInspector.cs を Roslyn AST で解析する。
+    /// Microsoft.CodeAnalysis.* は Narazaka.Unity.LilToonShaderMerger.Roslyn.dll 内で internalize されており、
+    /// InternalsVisibleTo 設定で本 Editor asmdef からのみアクセス可能。
+    /// </summary>
     public static class InspectorCsParser
     {
-        static readonly Regex Namespace = new Regex(@"namespace\s+([A-Za-z_][\w\.]*)", RegexOptions.Compiled);
-        static readonly Regex ClassDecl = new Regex(@"class\s+(\w+)\s*:\s*lilToonInspector", RegexOptions.Compiled);
-        static readonly Regex ShaderNameConst = new Regex(
-            @"private\s+const\s+string\s+shaderName\s*=\s*""([^""]+)""\s*;",
-            RegexOptions.Compiled);
-        static readonly Regex MaterialPropertyField = new Regex(
-            @"MaterialProperty\s+(_?\w+)\s*;",
-            RegexOptions.Compiled);
-        // <field> = FindProperty("<propName>", props);
-        static readonly Regex FindPropertyAssignment = new Regex(
-            @"(_?\w+)\s*=\s*FindProperty\s*\(\s*""([^""]+)""\s*,\s*props\s*\)\s*;",
-            RegexOptions.Compiled);
-        static readonly Regex FoldoutCall = new Regex(
-            @"Foldout\s*\(\s*""([^""]+)""",
-            RegexOptions.Compiled);
-        // private static bool isShow*; (Foldout 状態変数)
-        static readonly Regex IsShowField = new Regex(
-            @"(?:private|protected|internal|public)\s+(?:static\s+)?bool\s+(isShow\w*)\s*[;=]",
-            RegexOptions.Compiled);
-        // class 直下のメソッド宣言 (修飾子 + 戻り型 + 名前 + 括弧)
-        static readonly Regex MethodDecl = new Regex(
-            @"(?:public|private|protected|internal|static|override|virtual|abstract|sealed|async|new|\s)+\s+\S+\s+(\w+)\s*\(",
-            RegexOptions.Compiled);
-
-        // 公式 lilToon カスタムシェーダーテンプレートに含まれるメソッド名
         static readonly HashSet<string> CanonicalMethodNames = new HashSet<string>
         {
             "LoadCustomProperties",
@@ -39,102 +22,61 @@ namespace Narazaka.Unity.LilToonShaderMerger
             "LoadCustomLanguage",
         };
 
-        // フィールド宣言 (access modifier 必須、 末尾 ; or =)
-        static readonly Regex FieldDecl = new Regex(
-            @"^\s*(?:(?:public|private|protected|internal)\s+)+(?:static\s+|readonly\s+|const\s+)*(?<type>[A-Za-z_][\w\.\<\>\[\]]*)\s+(?<name>\w+)\s*[;=]",
-            RegexOptions.Compiled | RegexOptions.Multiline);
+        // lilToon CustomInspector.cs は #if UNITY_EDITOR で囲まれていることが多いため、
+        // Roslyn のプリプロセッサに UNITY_EDITOR を定義しないと全コードが trivia 扱いになる
+        static readonly CSharpParseOptions ParseOptions = CSharpParseOptions.Default
+            .WithPreprocessorSymbols("UNITY_EDITOR");
 
         public static ParsedInspector Parse(string source)
         {
             var p = new ParsedInspector();
+            var tree = CSharpSyntaxTree.ParseText(source, ParseOptions);
+            var root = tree.GetRoot();
 
-            var nm = Namespace.Match(source);
-            if (nm.Success) p.Namespace = nm.Groups[1].Value;
+            // namespace
+            var nsDecl = root.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault();
+            if (nsDecl != null) p.Namespace = nsDecl.Name.ToString();
 
-            var cm = ClassDecl.Match(source);
-            if (!cm.Success) return p;  // PatternMatched=false
-            p.ClassName = cm.Groups[1].Value;
+            // lilToonInspector を継承する class
+            var classDecl = root.DescendantNodes().OfType<ClassDeclarationSyntax>()
+                .FirstOrDefault(c => c.BaseList?.Types.Any(t => t.Type.ToString() == "lilToonInspector") == true);
+            if (classDecl == null) return p; // PatternMatched=false
 
-            var sm = ShaderNameConst.Match(source);
-            if (sm.Success) p.ShaderNameConst = sm.Groups[1].Value;
+            p.ClassName = classDecl.Identifier.ValueText;
 
-            // MaterialProperty フィールド + isShow* bool フィールド抽出 (コメントアウト行を除外)
-            foreach (var rawLine in source.Replace("\r\n", "\n").Split('\n'))
+            bool hasNonCanonical = false;
+
+            foreach (var member in classDecl.Members)
             {
-                if (rawLine.TrimStart().StartsWith("//")) continue;
-                foreach (Match m in MaterialPropertyField.Matches(rawLine))
-                    p.MaterialPropertyFields.Add(m.Groups[1].Value);
-                foreach (Match m in IsShowField.Matches(rawLine))
+                switch (member)
                 {
-                    var name = m.Groups[1].Value;
-                    if (!p.IsShowFields.Contains(name)) p.IsShowFields.Add(name);
+                    case FieldDeclarationSyntax field:
+                        AnalyzeField(field, p, ref hasNonCanonical);
+                        break;
+                    case MethodDeclarationSyntax method:
+                        if (!CanonicalMethodNames.Contains(method.Identifier.ValueText))
+                            hasNonCanonical = true;
+                        else if (method.Identifier.ValueText == "LoadCustomProperties")
+                            AnalyzeLoadCustomProperties(method, p);
+                        else if (method.Identifier.ValueText == "DrawCustomProperties")
+                            AnalyzeDrawCustomProperties(method, p);
+                        break;
+                    case PropertyDeclarationSyntax _:
+                    case ConstructorDeclarationSyntax _:
+                    case ClassDeclarationSyntax _:
+                    case StructDeclarationSyntax _:
+                    case EnumDeclarationSyntax _:
+                    case InterfaceDeclarationSyntax _:
+                    case DelegateDeclarationSyntax _:
+                        hasNonCanonical = true;
+                        break;
                 }
             }
-            // 元 inspector に isShow* が無いケースでも、 元 body が isShowCustomProperties を使ってる (lilToon template) なら追加
+
+            // isShowCustomProperties は元 source に明示宣言がなくても body で使う場合があるので追加
             if (!p.IsShowFields.Contains("isShowCustomProperties"))
                 p.IsShowFields.Add("isShowCustomProperties");
 
-            // DrawCustomProperties メソッド本文を切り出し
-            int drawIdx = source.IndexOf("DrawCustomProperties");
-            if (drawIdx >= 0)
-            {
-                int openBrace = source.IndexOf('{', drawIdx);
-                if (openBrace > 0)
-                {
-                    int depth = 1; int end = openBrace + 1;
-                    while (end < source.Length && depth > 0)
-                    {
-                        if (source[end] == '{') depth++;
-                        else if (source[end] == '}') depth--;
-                        end++;
-                    }
-                    var body = source.Substring(openBrace + 1, end - openBrace - 2);
-                    foreach (var ln in body.Replace("\r\n", "\n").Split('\n'))
-                        p.DrawCustomPropertiesBodyLines.Add(ln);
-
-                    foreach (var ln in body.Replace("\r\n", "\n").Split('\n'))
-                    {
-                        if (ln.TrimStart().StartsWith("//")) continue;
-                        var fm = FoldoutCall.Match(ln);
-                        if (fm.Success) { p.FoldoutTitle = fm.Groups[1].Value; break; }
-                    }
-                }
-            }
-
-            // LoadCustomProperties メソッド本文から FindProperty 代入を抽出 (コメントアウト行を除外)
-            int loadIdx = source.IndexOf("LoadCustomProperties");
-            if (loadIdx >= 0)
-            {
-                int openBrace = source.IndexOf('{', loadIdx);
-                if (openBrace > 0)
-                {
-                    int depth = 1; int end = openBrace + 1;
-                    while (end < source.Length && depth > 0)
-                    {
-                        if (source[end] == '{') depth++;
-                        else if (source[end] == '}') depth--;
-                        end++;
-                    }
-                    var body = source.Substring(openBrace + 1, end - openBrace - 2);
-                    foreach (var ln in body.Replace("\r\n", "\n").Split('\n'))
-                    {
-                        if (ln.TrimStart().StartsWith("//")) continue;
-                        var m = FindPropertyAssignment.Match(ln);
-                        if (m.Success)
-                        {
-                            var field = m.Groups[1].Value;
-                            var propName = m.Groups[2].Value;
-                            p.FindPropertyNames.Add(propName);
-                            p.FieldToPropertyName[field] = propName;
-                        }
-                    }
-                }
-            }
-
-            // クラス内に canonical 以外のメソッドや nested type があれば非定型と判定
-            bool hasNonCanonical = HasNonCanonicalMembers(source);
-
-            // パターン適合判定: クラス名 + Find/Draw のどちらかに該当 + 非 canonical メンバなし
             p.PatternMatched = !string.IsNullOrEmpty(p.ClassName)
                 && (p.FindPropertyNames.Count > 0 || p.DrawCustomPropertiesBodyLines.Count > 0)
                 && !hasNonCanonical;
@@ -142,54 +84,73 @@ namespace Narazaka.Unity.LilToonShaderMerger
             return p;
         }
 
-        // クラス body 内に canonical 以外のメソッド / nested class / nested enum / 非 MaterialProperty フィールドがあるか
-        static bool HasNonCanonicalMembers(string source)
+        static void AnalyzeField(FieldDeclarationSyntax field, ParsedInspector p, ref bool hasNonCanonical)
         {
-            // class 宣言の `{` 位置を取得しブロックを切り出し
-            var classMatch = ClassDecl.Match(source);
-            if (!classMatch.Success) return false;
-            int classOpen = source.IndexOf('{', classMatch.Index);
-            if (classOpen < 0) return false;
-            int depth = 1, end = classOpen + 1;
-            while (end < source.Length && depth > 0)
+            var type = field.Declaration.Type.ToString();
+            foreach (var variable in field.Declaration.Variables)
             {
-                if (source[end] == '{') depth++;
-                else if (source[end] == '}') depth--;
-                end++;
+                var name = variable.Identifier.ValueText;
+                if (type == "MaterialProperty")
+                {
+                    p.MaterialPropertyFields.Add(name);
+                }
+                else if (type == "bool" && name.StartsWith("isShow"))
+                {
+                    if (!p.IsShowFields.Contains(name)) p.IsShowFields.Add(name);
+                }
+                else if (type == "string" && name == "shaderName")
+                {
+                    if (variable.Initializer?.Value is LiteralExpressionSyntax lit && lit.Token.Value is string s)
+                        p.ShaderNameConst = s;
+                }
+                else
+                {
+                    hasNonCanonical = true;
+                }
             }
-            var classBody = source.Substring(classOpen + 1, end - classOpen - 2);
-
-            // nested class / enum
-            if (Regex.IsMatch(classBody, @"\b(class|enum|struct|interface)\s+\w+\s*[:{]"))
-                return true;
-
-            // 非 canonical メソッド
-            foreach (Match m in MethodDecl.Matches(classBody))
-            {
-                var name = m.Groups[1].Value;
-                if (CanonicalMethodNames.Contains(name)) continue;
-                if (name == "if" || name == "while" || name == "for" || name == "foreach" || name == "switch" || name == "using" || name == "return" || name == "new" || name == "throw" || name == "lock") continue;
-                if (name == ExtractClassName(source)) continue;
-                return true;
-            }
-
-            // 非 canonical フィールド (access modifier 付き、 MaterialProperty/isShow*/shaderName 以外)
-            foreach (Match m in FieldDecl.Matches(classBody))
-            {
-                var type = m.Groups["type"].Value;
-                var name = m.Groups["name"].Value;
-                if (type == "MaterialProperty") continue;
-                if (type == "bool" && name.StartsWith("isShow")) continue;
-                if (type == "string" && name == "shaderName") continue;
-                return true;
-            }
-            return false;
         }
 
-        static string ExtractClassName(string source)
+        static void AnalyzeLoadCustomProperties(MethodDeclarationSyntax method, ParsedInspector p)
         {
-            var m = ClassDecl.Match(source);
-            return m.Success ? m.Groups[1].Value : "";
+            if (method.Body == null) return;
+            foreach (var assign in method.Body.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+            {
+                if (!(assign.Left is IdentifierNameSyntax fieldName)) continue;
+                if (!(assign.Right is InvocationExpressionSyntax invoke)) continue;
+                if (!(invoke.Expression is IdentifierNameSyntax callName) || callName.Identifier.ValueText != "FindProperty") continue;
+                var args = invoke.ArgumentList.Arguments;
+                if (args.Count < 2) continue;
+                if (!(args[0].Expression is LiteralExpressionSyntax propLit) || !(propLit.Token.Value is string propName)) continue;
+
+                p.FindPropertyNames.Add(propName);
+                p.FieldToPropertyName[fieldName.Identifier.ValueText] = propName;
+            }
+        }
+
+        static void AnalyzeDrawCustomProperties(MethodDeclarationSyntax method, ParsedInspector p)
+        {
+            if (method.Body == null) return;
+
+            // body のテキストをそのまま行単位で保存 (merged Inspector 生成時に再利用)
+            var bodyText = method.Body.ToFullString();
+            var inner = bodyText.Trim();
+            if (inner.StartsWith("{")) inner = inner.Substring(1);
+            if (inner.EndsWith("}")) inner = inner.Substring(0, inner.Length - 1);
+
+            foreach (var line in inner.Replace("\r\n", "\n").Split('\n'))
+                p.DrawCustomPropertiesBodyLines.Add(line);
+
+            // 最初の Foldout("<title>", ...) 呼び出しから title 抽出
+            foreach (var invoke in method.Body.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (!(invoke.Expression is IdentifierNameSyntax callName) || callName.Identifier.ValueText != "Foldout") continue;
+                var args = invoke.ArgumentList.Arguments;
+                if (args.Count >= 1 && args[0].Expression is LiteralExpressionSyntax lit && lit.Token.Value is string title)
+                {
+                    p.FoldoutTitle = title;
+                    break;
+                }
+            }
         }
     }
 }

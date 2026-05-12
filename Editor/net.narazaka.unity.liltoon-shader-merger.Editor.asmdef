@@ -4,5 +4,9 @@
   "references": [
     "GUID:e7f0f8dffe955d640bbc76d1d4f4986e"
   ],
-  "autoReferenced": false
+  "autoReferenced": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "Narazaka.Unity.LilToonShaderMerger.Roslyn.dll"
+  ]
 }

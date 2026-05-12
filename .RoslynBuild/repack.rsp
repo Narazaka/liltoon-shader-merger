@@ -1,0 +1,14 @@
+/internalize
+/lib:bin\Release\netstandard2.0
+/out:bin\Release\merged\Narazaka.Unity.LilToonShaderMerger.Roslyn.dll
+bin\Release\netstandard2.0\Narazaka.Unity.LilToonShaderMerger.Roslyn.dll
+bin\Release\netstandard2.0\Microsoft.CodeAnalysis.dll
+bin\Release\netstandard2.0\Microsoft.CodeAnalysis.CSharp.dll
+bin\Release\netstandard2.0\System.Collections.Immutable.dll
+bin\Release\netstandard2.0\System.Reflection.Metadata.dll
+bin\Release\netstandard2.0\System.Threading.Tasks.Extensions.dll
+bin\Release\netstandard2.0\System.Buffers.dll
+bin\Release\netstandard2.0\System.Memory.dll
+bin\Release\netstandard2.0\System.Numerics.Vectors.dll
+bin\Release\netstandard2.0\System.Runtime.CompilerServices.Unsafe.dll
+bin\Release\netstandard2.0\System.Text.Encoding.CodePages.dll

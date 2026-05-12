@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>Narazaka.Unity.LilToonShaderMerger.Roslyn</AssemblyName>
+    <RootNamespace>Narazaka.Unity.LilToonShaderMerger.Roslyn</RootNamespace>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.7.0" />
+  </ItemGroup>
+  <!-- Build 後に ilrepack で internalize 済み単一 DLL を生成し Editor/Plugins/ へコピー -->
+  <Target Name="ILRepackInternalize" AfterTargets="Build">
+    <MakeDir Directories="bin\Release\merged" />
+    <Exec Command="ilrepack @repack.rsp" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <MakeDir Directories="..\Editor\Plugins" />
+    <Copy SourceFiles="bin\Release\merged\$(AssemblyName).dll"
+          DestinationFolder="..\Editor\Plugins\" />
+  </Target>
+</Project>
