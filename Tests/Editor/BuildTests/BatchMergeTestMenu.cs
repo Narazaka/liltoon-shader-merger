@@ -57,6 +57,55 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             WriteSummary(summary.ToString());
         }
 
+        [MenuItem("Tools/lilToon Shader Merger/Test/Run All Pairs (8C2 = 28)")]
+        public static void RunAllPairs()
+        {
+            EnsureRoot();
+            var summary = new StringBuilder("=== All-Pairs Merge Tests (8C2 = 28) ===\n");
+            for (int i = 0; i < AllShaders.Length; i++)
+            {
+                for (int j = i + 1; j < AllShaders.Length; j++)
+                {
+                    var a = AllShaders[i];
+                    var b = AllShaders[j];
+                    var label = $"pair_{a.label}_{b.label}";
+                    summary.AppendLine(RunOne(new[] { a, b }, label));
+                }
+            }
+            // すべてのペアを refresh して shader を実体化させる
+            AssetDatabase.Refresh();
+            // 続けてシェーダーコンパイル検証
+            summary.AppendLine();
+            summary.AppendLine("=== Shader Compile Verify ===");
+            foreach (var sub in Directory.GetDirectories(Application.dataPath + "/_batch_merge_tests"))
+            {
+                var name = Path.GetFileName(sub);
+                if (!name.StartsWith("pair_")) continue;
+                var shaderName = $"BatchMerge/{name}/lilToon";
+                var sh = Shader.Find(shaderName);
+                if (sh == null)
+                {
+                    summary.AppendLine($"  {name}: NULL (build failed)");
+                    continue;
+                }
+                var msgs = UnityEditor.ShaderUtil.GetShaderMessages(sh);
+                int errs = 0, warns = 0;
+                foreach (var m in msgs)
+                {
+                    if (m.severity == UnityEditor.Rendering.ShaderCompilerMessageSeverity.Error) errs++;
+                    else warns++;
+                }
+                summary.AppendLine($"  {name}: {errs} errors, {warns} warnings");
+                if (errs > 0)
+                {
+                    foreach (var m in msgs)
+                        if (m.severity == UnityEditor.Rendering.ShaderCompilerMessageSeverity.Error)
+                            summary.AppendLine($"    [ERR] {m.message.Substring(0, System.Math.Min(160, m.message.Length))}");
+                }
+            }
+            WriteSummary(summary.ToString());
+        }
+
         [MenuItem("Tools/lilToon Shader Merger/Test/Run Full Merge (All 8)")]
         public static void RunFullMerge()
         {
