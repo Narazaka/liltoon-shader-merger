@@ -87,5 +87,42 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             var d = CustomHlslParser.Parse(input);
             Assert.That(d.FlagMacros, Contains.Item("LIL_CUSTOM_VERT_COPY"));
         }
+
+        [Test]
+        public void Parse_ExtractsLilCustomVertexOs_Multiline()
+        {
+            const string input = @"
+#define LIL_CUSTOM_VERTEX_OS \
+    positionOS.xyz += offset;\
+    if(_normal==1){input.normalOS = newNormal;}
+";
+            var d = CustomHlslParser.Parse(input);
+            CollectionAssert.AreEqual(
+                new[] { "positionOS.xyz += offset;", "if(_normal==1){input.normalOS = newNormal;}" },
+                d.MultilineMacros["LIL_CUSTOM_VERTEX_OS"]
+            );
+        }
+
+        [Test]
+        public void Parse_ExtractsBeforeOutput()
+        {
+            const string input = @"
+#define BEFORE_OUTPUT \
+    fd.col *= myColor;
+";
+            var d = CustomHlslParser.Parse(input);
+            CollectionAssert.AreEqual(new[] { "fd.col *= myColor;" }, d.MultilineMacros["BEFORE_OUTPUT"]);
+        }
+
+        [Test]
+        public void Parse_ExtractsOverrideStage()
+        {
+            const string input = @"
+#define OVERRIDE_NORMAL \
+    fd.N = newNormal;
+";
+            var d = CustomHlslParser.Parse(input);
+            CollectionAssert.AreEqual(new[] { "fd.N = newNormal;" }, d.MultilineMacros["OVERRIDE_NORMAL"]);
+        }
     }
 }
