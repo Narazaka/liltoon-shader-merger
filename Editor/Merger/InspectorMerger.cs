@@ -41,7 +41,23 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         sb.AppendLine($"        MaterialProperty {f};");
             }
             sb.AppendLine();
-            sb.AppendLine("        private static bool isShowCustomProperties;");
+            // セクション毎に独立した isShow フィールド (元 inspector の isShowCustomProperties をリネーム)
+            // sources の index ベースで一意な field 名を生成 (SourceKey が衝突しても OK)
+            var sectionFieldNames = new string[sources.Count];
+            var usedFieldNames = new HashSet<string>();
+            for (int i = 0; i < sources.Count; i++)
+            {
+                var (key, ins) = sources[i];
+                if (!ins.PatternMatched) continue;
+                var baseIdent = SafeIdent(string.IsNullOrEmpty(ins.ClassName) ? key : ins.ClassName);
+                var fieldName = $"isShow_{baseIdent}";
+                int suffix = 1;
+                while (usedFieldNames.Contains(fieldName))
+                    fieldName = $"isShow_{baseIdent}_{suffix++}";
+                usedFieldNames.Add(fieldName);
+                sectionFieldNames[i] = fieldName;
+                sb.AppendLine($"        private static bool {fieldName};");
+            }
             sb.AppendLine($"        private const string shaderName = \"{newShaderName}\";");
             sb.AppendLine();
 
@@ -63,24 +79,27 @@ namespace Narazaka.Unity.LilToonShaderMerger
             sb.AppendLine("        }");
             sb.AppendLine();
 
-            // DrawCustomProperties
+            // DrawCustomProperties: 各セクションの body 中の `isShowCustomProperties` を専用フィールドに書き換え
             sb.AppendLine("        protected override void DrawCustomProperties(Material material)");
             sb.AppendLine("        {");
-            sb.AppendLine("            isShowCustomProperties = Foldout(\"Custom Properties\", \"Custom Properties\", isShowCustomProperties);");
-            sb.AppendLine("            if (!isShowCustomProperties) return;");
-            sb.AppendLine("            EditorGUILayout.BeginVertical(boxOuter);");
-            foreach (var (key, ins) in sources)
+            for (int i = 0; i < sources.Count; i++)
             {
+                var (key, ins) = sources[i];
                 if (!ins.PatternMatched) continue;
+                var fieldName = sectionFieldNames[i];
                 sb.AppendLine($"            // --- {key} ---");
                 foreach (var line in ins.DrawCustomPropertiesBodyLines)
                 {
                     var trimmed = line.TrimEnd();
                     if (string.IsNullOrWhiteSpace(trimmed)) continue;
-                    sb.AppendLine($"            {trimmed.TrimStart()}");
+                    // isShowCustomProperties (識別子境界付き) を section field に置換
+                    var rewritten = System.Text.RegularExpressions.Regex.Replace(
+                        trimmed.TrimStart(),
+                        @"\bisShowCustomProperties\b",
+                        fieldName);
+                    sb.AppendLine($"            {rewritten}");
                 }
             }
-            sb.AppendLine("            EditorGUILayout.EndVertical();");
             sb.AppendLine("        }");
             sb.AppendLine();
 
@@ -90,6 +109,16 @@ namespace Narazaka.Unity.LilToonShaderMerger
             sb.AppendLine("    }");
             sb.AppendLine("}");
             sb.AppendLine("#endif");
+            return sb.ToString();
+        }
+
+        static string SafeIdent(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "Unnamed";
+            var sb = new StringBuilder();
+            foreach (var c in s)
+                sb.Append(char.IsLetterOrDigit(c) ? c : '_');
+            if (char.IsDigit(sb[0])) sb.Insert(0, '_');
             return sb.ToString();
         }
 
