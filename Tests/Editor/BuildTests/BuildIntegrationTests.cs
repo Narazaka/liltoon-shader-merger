@@ -74,5 +74,24 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             AssetDatabase.DeleteAsset(outFolder);
             Object.DestroyImmediate(settings);
         }
+
+        [Test]
+        public void DryRun_PropertyConflict_ErrorOut()
+        {
+            var settings = ScriptableObject.CreateInstance<LilToonShaderMergerSettings>();
+            settings.shaderName = "Test/Conflict";
+            settings.sourceFolders = new[] {
+                AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_a"),
+                AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/conflict_property"),
+            };
+            settings.propertyConflict = ConflictStrategy.ErrorOut;
+
+            var result = LilToonShaderMerger.DryRun(settings);
+            bool hasErr = false;
+            foreach (var d in result.Diagnostics)
+                if (d.Severity == Severity.Error && d.Category == "property") { hasErr = true; break; }
+            Assert.That(hasErr, Is.True, "expected property error, got: " + string.Join("; ", result.Diagnostics));
+            Object.DestroyImmediate(settings);
+        }
     }
 }
