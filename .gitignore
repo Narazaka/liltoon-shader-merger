@@ -1,0 +1,8 @@
+# Roslyn 統合 DLL は build artifact なのでコミットしない (リリース時にビルドして同梱)
+Editor/Plugins/Narazaka.Unity.LilToonShaderMerger.Roslyn.dll
+Editor/Plugins/Narazaka.Unity.LilToonShaderMerger.Roslyn.dll.meta
+
+# Visual Studio / dotnet 自動生成ファイル
+*.sln
+*.suo
+.vs/
