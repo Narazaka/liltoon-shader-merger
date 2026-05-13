@@ -1,0 +1,148 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Roslyn 統合 DLL を ILRepack でビルド (Microsoft.CodeAnalysis.CSharp を internalize)
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install ilrepack
+        run: dotnet tool install -g dotnet-ilrepack
+
+      - name: Build Roslyn DLL
+        run: dotnet build -c Release
+        working-directory: .RoslynBuild
+
+      - name: Verify Roslyn DLL
+        run: |
+          if [ ! -f Editor/Plugins/Narazaka.Unity.LilToonShaderMerger.Roslyn.dll ]; then
+            echo "::error::Roslyn DLL was not built"
+            exit 1
+          fi
+          ls -la Editor/Plugins/
+
+      # 以下は Narazaka/vpm-repos の reusable workflow と同等の処理 (dotnet build を組み込むため inline 化)
+      - name: get packageName
+        id: packageName
+        uses: notiz-dev/github-action-json-property@7a701887f4b568b23eb7b78bb0fc49aaeb1b68d3
+        with:
+          path: "package.json"
+          prop_path: "name"
+
+      - name: get version
+        id: version
+        uses: notiz-dev/github-action-json-property@7a701887f4b568b23eb7b78bb0fc49aaeb1b68d3
+        with:
+          path: "package.json"
+          prop_path: "version"
+
+      - name: Set Environment Variables
+        run: |
+          echo "zipFile=${{ steps.packageName.outputs.prop }}-${{ steps.version.outputs.prop }}.zip" >> $GITHUB_ENV
+          echo "unityPackage=${{ steps.packageName.outputs.prop }}-${{ steps.version.outputs.prop }}-novcc.unitypackage" >> $GITHUB_ENV
+          echo "unityPackageZipFile=${{ steps.packageName.outputs.prop }}-${{ steps.version.outputs.prop }}-novcc.zip" >> $GITHUB_ENV
+          echo "vpaiLatestFile=${{ steps.packageName.outputs.prop }}-installer.unitypackage" >> $GITHUB_ENV
+          echo "vpaiLatestZipFile=${{ steps.packageName.outputs.prop }}-installer.zip" >> $GITHUB_ENV
+          echo "vpaiVersionFile=${{ steps.packageName.outputs.prop }}-${{ steps.version.outputs.prop }}-installer.unitypackage" >> $GITHUB_ENV
+          echo "vpaiVersionZipFile=${{ steps.packageName.outputs.prop }}-${{ steps.version.outputs.prop }}-installer.zip" >> $GITHUB_ENV
+          echo "narazakarepos=https://vpm.narazaka.net/index.json" >> $GITHUB_ENV
+
+      - name: remove backup files
+        run: rm -rf *~
+
+      - name: Create Zip
+        uses: thedoctor0/zip-release@09336613be18a8208dfa66bd57efafd9e2685657
+        with:
+          type: "zip"
+          directory: "."
+          filename: "${{env.zipFile}}"
+          exclusions: "*.git* .RoslynBuild/*"
+
+      - name: mkdir Packages
+        run: mkdir Packages
+
+      - name: Checkout for unitypackage
+        uses: actions/checkout@v4
+        with:
+          path: Packages/${{steps.packageName.outputs.prop}}
+          clean: false
+
+      - name: Build Roslyn DLL for unitypackage
+        run: dotnet build -c Release
+        working-directory: Packages/${{steps.packageName.outputs.prop}}/.RoslynBuild
+
+      - name: Create .meta list
+        run: find "Packages/${{steps.packageName.outputs.prop}}" -name \*.meta >> metaList
+
+      - name: Create UnityPackage
+        uses: pCYSl5EDgo/create-unitypackage@cfcd3cf0391a5ef1306342794866a9897c32af0b
+        with:
+          package-path: ${{ env.unityPackage }}
+          include-files: metaList
+
+      - name: Create UnityPackage Zip
+        uses: thedoctor0/zip-release@09336613be18a8208dfa66bd57efafd9e2685657
+        with:
+          type: "zip"
+          directory: "."
+          path: ${{ env.unityPackage }}
+          filename: "${{env.unityPackageZipFile}}"
+
+      - name: Create VPAI latest
+        uses: anatawa12/sh-actions/create-vpai@ab722329dbdc558dd9cc8e7bc89bb61d2df21ba0
+        with:
+          repositories: |
+            ${{ env.narazakarepos }}
+          packages: ${{ steps.packageName.outputs.prop }}@^${{ steps.version.outputs.prop }}
+          output: "${{ env.vpaiLatestFile }}"
+
+      - name: Create VPAI latest Zip
+        uses: thedoctor0/zip-release@09336613be18a8208dfa66bd57efafd9e2685657
+        with:
+          type: "zip"
+          directory: "."
+          path: ${{ env.vpaiLatestFile }}
+          filename: ${{ env.vpaiLatestZipFile }}
+
+      - name: Create VPAI version
+        uses: anatawa12/sh-actions/create-vpai@ab722329dbdc558dd9cc8e7bc89bb61d2df21ba0
+        with:
+          repositories: |
+            ${{ env.narazakarepos }}
+          packages: ${{ steps.packageName.outputs.prop }}@${{ steps.version.outputs.prop }}
+          output: "${{ env.vpaiVersionFile }}"
+
+      - name: Create VPAI version Zip
+        uses: thedoctor0/zip-release@09336613be18a8208dfa66bd57efafd9e2685657
+        with:
+          type: "zip"
+          directory: "."
+          path: ${{ env.vpaiVersionFile }}
+          filename: ${{ env.vpaiVersionZipFile }}
+
+      - name: Make Release
+        uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
+        with:
+          tag_name: v${{ steps.version.outputs.prop }}
+          files: |
+            ${{ env.zipFile }}
+            ${{ env.vpaiLatestZipFile }}
+            ${{ env.vpaiVersionZipFile }}
+            ${{ env.unityPackageZipFile }}
+            package.json
