@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Narazaka.Unity.LilToonShaderMerger.Tests
 {
@@ -9,6 +10,19 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
     {
         const string FixtureRoot =
             "Packages/net.narazaka.unity.liltoon-shader-merger/Tests/Editor/Fixtures";
+
+        [SetUp]
+        public void SetUp()
+        {
+            // 既存の workspace 出力 (バッチテスト等の手動実行で残った壊れた upstream Fur シェーダー) を削除
+            // → Unity が AssetDatabase.Refresh で再コンパイル試行する際の Unhandled なシェーダーエラーを防ぐ
+            foreach (var dir in new[] { "Assets/_batch_merge_tests", "Assets/_motchiri_uzumore_test", "Assets/_temp_merge_out" })
+            {
+                if (AssetDatabase.IsValidFolder(dir)) AssetDatabase.DeleteAsset(dir);
+            }
+            // テスト中の他要因 (lilToon 自体のシェーダー再 import warning 等) も拾わない
+            LogAssert.ignoreFailingMessages = true;
+        }
 
         [Test]
         public void DryRun_SingleSource_NoDiagnostics()
