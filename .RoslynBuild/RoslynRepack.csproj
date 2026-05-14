@@ -13,10 +13,10 @@
   </ItemGroup>
   <!-- Build 後に ilrepack で internalize 済み単一 DLL を生成し Editor/Plugins/ へコピー -->
   <Target Name="ILRepackInternalize" AfterTargets="Build">
-    <MakeDir Directories="bin\Release\merged" />
+    <MakeDir Directories="bin/Release/merged" />
     <Exec Command="ilrepack @repack.rsp" WorkingDirectory="$(MSBuildProjectDirectory)" />
-    <MakeDir Directories="..\Editor\Plugins" />
-    <Copy SourceFiles="bin\Release\merged\$(AssemblyName).dll"
-          DestinationFolder="..\Editor\Plugins\" />
+    <MakeDir Directories="../Editor/Plugins" />
+    <Copy SourceFiles="bin/Release/merged/$(AssemblyName).dll"
+          DestinationFolder="../Editor/Plugins/" />
   </Target>
 </Project>
