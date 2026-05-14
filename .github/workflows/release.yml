@@ -35,7 +35,6 @@ jobs:
             echo "::error::Roslyn DLL was not built"
             exit 1
           fi
-          ls -la Editor/Plugins/
 
       # 以下は Narazaka/vpm-repos の reusable workflow と同等の処理 (dotnet build を組み込むため inline 化)
       - name: get packageName
@@ -55,8 +54,6 @@ jobs:
       - name: Set Environment Variables
         run: |
           echo "zipFile=${{ steps.packageName.outputs.prop }}-${{ steps.version.outputs.prop }}.zip" >> $GITHUB_ENV
-          echo "unityPackage=${{ steps.packageName.outputs.prop }}-${{ steps.version.outputs.prop }}-novcc.unitypackage" >> $GITHUB_ENV
-          echo "unityPackageZipFile=${{ steps.packageName.outputs.prop }}-${{ steps.version.outputs.prop }}-novcc.zip" >> $GITHUB_ENV
           echo "vpaiLatestFile=${{ steps.packageName.outputs.prop }}-installer.unitypackage" >> $GITHUB_ENV
           echo "vpaiLatestZipFile=${{ steps.packageName.outputs.prop }}-installer.zip" >> $GITHUB_ENV
           echo "vpaiVersionFile=${{ steps.packageName.outputs.prop }}-${{ steps.version.outputs.prop }}-installer.unitypackage" >> $GITHUB_ENV
@@ -66,43 +63,28 @@ jobs:
       - name: remove backup files
         run: rm -rf *~
 
+      # upstream Narazaka/vpm-repos/release.yml の `exclude` 入力と同等処理。
+      # newline-separated paths/globs を `find -path "./<pattern>" -exec rm -rf {} +` で削除する。
+      - name: Remove excluded files
+        env:
+          EXCLUDE: |
+            Tests/*
+            .RoslynBuild/*
+            .github/*
+        run: |
+          while IFS= read -r pattern; do
+            if [ -n "$pattern" ]; then
+              find . -path "./$pattern" -exec rm -rf {} +
+            fi
+          done <<< "$EXCLUDE"
+
       - name: Create Zip
         uses: thedoctor0/zip-release@09336613be18a8208dfa66bd57efafd9e2685657
         with:
           type: "zip"
           directory: "."
           filename: "${{env.zipFile}}"
-          exclusions: "*.git* .RoslynBuild/*"
-
-      - name: mkdir Packages
-        run: mkdir Packages
-
-      - name: Checkout for unitypackage
-        uses: actions/checkout@v4
-        with:
-          path: Packages/${{steps.packageName.outputs.prop}}
-          clean: false
-
-      - name: Build Roslyn DLL for unitypackage
-        run: dotnet build -c Release
-        working-directory: Packages/${{steps.packageName.outputs.prop}}/.RoslynBuild
-
-      - name: Create .meta list
-        run: find "Packages/${{steps.packageName.outputs.prop}}" -name \*.meta >> metaList
-
-      - name: Create UnityPackage
-        uses: pCYSl5EDgo/create-unitypackage@cfcd3cf0391a5ef1306342794866a9897c32af0b
-        with:
-          package-path: ${{ env.unityPackage }}
-          include-files: metaList
-
-      - name: Create UnityPackage Zip
-        uses: thedoctor0/zip-release@09336613be18a8208dfa66bd57efafd9e2685657
-        with:
-          type: "zip"
-          directory: "."
-          path: ${{ env.unityPackage }}
-          filename: "${{env.unityPackageZipFile}}"
+          exclusions: "*.git*"
 
       - name: Create VPAI latest
         uses: anatawa12/sh-actions/create-vpai@ab722329dbdc558dd9cc8e7bc89bb61d2df21ba0
@@ -144,5 +126,4 @@ jobs:
             ${{ env.zipFile }}
             ${{ env.vpaiLatestZipFile }}
             ${{ env.vpaiVersionZipFile }}
-            ${{ env.unityPackageZipFile }}
             package.json
