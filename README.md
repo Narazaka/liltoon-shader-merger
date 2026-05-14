@@ -26,6 +26,10 @@ https://github.com/Narazaka/liltoon-shader-merger/releases/latest から `net.na
 
 衝突戦略 (`propertyConflict` / `functionConflict` / `replaceConflict` / `textureConflict`) は ErrorOut / PreferFirst / PreferLast から選択可能。
 
+## Changelog
+
+- 0.1.0-alpha.0: とりあえずリリース
+
 ## Build (開発者向け)
 
 このパッケージは Roslyn (`Microsoft.CodeAnalysis.CSharp`) を internalize した DLL に依存する。 リポジトリには DLL 自体は含まれていないため、 ソースから利用する場合は事前にビルドが必要:

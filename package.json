@@ -1,6 +1,6 @@
 {
   "name": "net.narazaka.unity.liltoon-shader-merger",
-  "version": "1.0.0",
+  "version": "0.1.0-alpha.0",
   "displayName": "lilToon Shader Merger",
   "description": "複数の lilToon カスタムシェーダーを 1 つのカスタムシェーダーへ自動合成する Unity Editor ツール",
   "author": {
@@ -8,6 +8,8 @@
     "url": "https://github.com/Narazaka"
   },
   "license": "Zlib",
+  "documentationUrl": "https://github.com/Narazaka/liltoon-shader-merger#liltoon-shader-merger",
+  "changelogUrl": "https://github.com/Narazaka/liltoon-shader-merger#changelog",
   "type": "tool",
   "url": "https://github.com/Narazaka/liltoon-shader-merger.git",
   "unity": "2022.3",
