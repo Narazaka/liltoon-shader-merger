@@ -19,4 +19,39 @@
     <Copy SourceFiles="bin/Release/merged/$(AssemblyName).dll"
           DestinationFolder="../Editor/Plugins/" />
   </Target>
+
+  <!--
+    Roslyn/.NET runtime を ILRepack で internalize 同梱しているため、 各 MIT ライセンスの notice 保持義務がある。
+    DLL と同じ Editor/Plugins/ 配下の Licenses/ サブフォルダに、 各 NuGet package の LICENSE を個別に配置する。
+    System.* は NuGet cache (`$(NuGetPackageRoot)`) からコピー、 Microsoft.CodeAnalysis.* は NuGet 内に本文がないため
+    .RoslynBuild/Licenses/dotnet-roslyn-LICENSE.txt (リポジトリ committed) からコピーする。
+  -->
+  <Target Name="CollectThirdPartyLicenses" AfterTargets="ILRepackInternalize">
+    <PropertyGroup>
+      <LicensesDir>$(MSBuildProjectDirectory)/../Editor/Plugins/$(AssemblyName).Licenses</LicensesDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(LicensesDir)" />
+    <!-- Microsoft.CodeAnalysis.CSharp / Common (4.7.0) — dotnet/roslyn, MIT -->
+    <Copy SourceFiles="Licenses/dotnet-roslyn-LICENSE.txt"
+          DestinationFiles="$(LicensesDir)/Microsoft.CodeAnalysis.CSharp-LICENSE.txt" />
+    <Copy SourceFiles="Licenses/dotnet-roslyn-LICENSE.txt"
+          DestinationFiles="$(LicensesDir)/Microsoft.CodeAnalysis.Common-LICENSE.txt" />
+    <!-- System.* — dotnet/runtime, MIT (NuGet cache 内 LICENSE.TXT を直接コピー) -->
+    <Copy SourceFiles="$(NuGetPackageRoot)system.collections.immutable/7.0.0/LICENSE.TXT"
+          DestinationFiles="$(LicensesDir)/System.Collections.Immutable-LICENSE.txt" />
+    <Copy SourceFiles="$(NuGetPackageRoot)system.reflection.metadata/7.0.0/LICENSE.TXT"
+          DestinationFiles="$(LicensesDir)/System.Reflection.Metadata-LICENSE.txt" />
+    <Copy SourceFiles="$(NuGetPackageRoot)system.threading.tasks.extensions/4.5.4/LICENSE.TXT"
+          DestinationFiles="$(LicensesDir)/System.Threading.Tasks.Extensions-LICENSE.txt" />
+    <Copy SourceFiles="$(NuGetPackageRoot)system.buffers/4.5.1/LICENSE.TXT"
+          DestinationFiles="$(LicensesDir)/System.Buffers-LICENSE.txt" />
+    <Copy SourceFiles="$(NuGetPackageRoot)system.memory/4.5.5/LICENSE.TXT"
+          DestinationFiles="$(LicensesDir)/System.Memory-LICENSE.txt" />
+    <Copy SourceFiles="$(NuGetPackageRoot)system.numerics.vectors/4.4.0/LICENSE.TXT"
+          DestinationFiles="$(LicensesDir)/System.Numerics.Vectors-LICENSE.txt" />
+    <Copy SourceFiles="$(NuGetPackageRoot)system.runtime.compilerservices.unsafe/6.0.0/LICENSE.TXT"
+          DestinationFiles="$(LicensesDir)/System.Runtime.CompilerServices.Unsafe-LICENSE.txt" />
+    <Copy SourceFiles="$(NuGetPackageRoot)system.text.encoding.codepages/7.0.0/LICENSE.TXT"
+          DestinationFiles="$(LicensesDir)/System.Text.Encoding.CodePages-LICENSE.txt" />
+  </Target>
 </Project>

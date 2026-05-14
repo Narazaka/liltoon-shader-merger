@@ -1,6 +1,8 @@
 # Roslyn 統合 DLL は build artifact なのでコミットしない (リリース時にビルドして同梱)
 # .meta は stable GUID 維持のためコミット (DLL ファイル無し時 Unity は warn のみで動作する)
 Editor/Plugins/Narazaka.Unity.LilToonShaderMerger.Roslyn.dll
+# 同梱 NuGet 依存の LICENSE 群 (build 時に NuGet cache + リポジトリ committed Roslyn LICENSE から生成)
+Editor/Plugins/Narazaka.Unity.LilToonShaderMerger.Roslyn.Licenses/
 
 # Visual Studio / dotnet 自動生成ファイル
 *.sln
