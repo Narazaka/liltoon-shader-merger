@@ -74,7 +74,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
 
             var snapshot1 = new Dictionary<string, string>();
             foreach (var f in System.IO.Directory.GetFiles(outFolder, "*", System.IO.SearchOption.AllDirectories))
-                if (!f.EndsWith(".meta")) snapshot1[f] = System.IO.File.ReadAllText(f);
+                snapshot1[f] = System.IO.File.ReadAllText(f);
 
             var r2 = LilToonShaderMerger.Build(settings);
             Assert.That(r2.Success, Is.True);
@@ -105,6 +105,136 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             foreach (var d in result.Diagnostics)
                 if (d.Severity == Severity.Error && d.Category == "property") { hasErr = true; break; }
             Assert.That(hasErr, Is.True, "expected property error, got: " + string.Join("; ", result.Diagnostics));
+            Object.DestroyImmediate(settings);
+        }
+
+        // Extracts "guid: ..." line value from a .meta file.
+        static string ReadMetaGuid(string metaPath)
+        {
+            foreach (var line in System.IO.File.ReadAllLines(metaPath))
+                if (line.StartsWith("guid:")) return line.Substring(5).Trim();
+            return null;
+        }
+
+        // Snapshot every .meta guid under <folder>, keyed by path relative to <folder>.
+        static Dictionary<string, string> SnapshotMetaGuids(string folder)
+        {
+            var d = new Dictionary<string, string>();
+            foreach (var f in System.IO.Directory.GetFiles(folder, "*.meta", System.IO.SearchOption.AllDirectories))
+            {
+                var rel = f.Substring(folder.Length).TrimStart('/', '\\').Replace('\\', '/');
+                d[rel] = ReadMetaGuid(f);
+            }
+            return d;
+        }
+
+        [Test]
+        public void Build_SameShaderName_DifferentOutputFolders_ProducesIdenticalGuids()
+        {
+            var outA = "Assets/_temp_merge_out_a";
+            var outB = "Assets/_temp_merge_out_b";
+            foreach (var d in new[] { outA, outB })
+                if (AssetDatabase.IsValidFolder(d)) AssetDatabase.DeleteAsset(d);
+            AssetDatabase.CreateFolder("Assets", "_temp_merge_out_a");
+            AssetDatabase.CreateFolder("Assets", "_temp_merge_out_b");
+
+            LilToonShaderMergerSettings MakeSettings(string outFolder)
+            {
+                var s = ScriptableObject.CreateInstance<LilToonShaderMergerSettings>();
+                s.shaderName = "Test/CrossLocation";
+                s.sourceFolders = new[] {
+                    AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_a"),
+                    AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_b"),
+                };
+                s.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(outFolder);
+                return s;
+            }
+
+            var sa = MakeSettings(outA);
+            var sb = MakeSettings(outB);
+            var ra = LilToonShaderMerger.Build(sa);
+            var rb = LilToonShaderMerger.Build(sb);
+            Assert.That(ra.Success, Is.True, string.Join("; ", ra.Diagnostics));
+            Assert.That(rb.Success, Is.True, string.Join("; ", rb.Diagnostics));
+
+            var guidsA = SnapshotMetaGuids(outA);
+            var guidsB = SnapshotMetaGuids(outB);
+            Assert.That(guidsA.Keys, Is.EquivalentTo(guidsB.Keys), "same shaderName must produce the same set of files");
+            foreach (var k in guidsA.Keys)
+                Assert.That(guidsB[k], Is.EqualTo(guidsA[k]), $"guid mismatch for {k}");
+
+            AssetDatabase.DeleteAsset(outA);
+            AssetDatabase.DeleteAsset(outB);
+            Object.DestroyImmediate(sa);
+            Object.DestroyImmediate(sb);
+        }
+
+        [Test]
+        public void Build_DifferentShaderName_ProducesDifferentGuids()
+        {
+            var outA = "Assets/_temp_merge_out_n1";
+            var outB = "Assets/_temp_merge_out_n2";
+            foreach (var d in new[] { outA, outB })
+                if (AssetDatabase.IsValidFolder(d)) AssetDatabase.DeleteAsset(d);
+            AssetDatabase.CreateFolder("Assets", "_temp_merge_out_n1");
+            AssetDatabase.CreateFolder("Assets", "_temp_merge_out_n2");
+
+            LilToonShaderMergerSettings Mk(string outFolder, string name)
+            {
+                var s = ScriptableObject.CreateInstance<LilToonShaderMergerSettings>();
+                s.shaderName = name;
+                s.sourceFolders = new[] {
+                    AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_a"),
+                };
+                s.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(outFolder);
+                return s;
+            }
+
+            var sa = Mk(outA, "Test/NameOne");
+            var sb = Mk(outB, "Test/NameTwo");
+            Assert.That(LilToonShaderMerger.Build(sa).Success, Is.True);
+            Assert.That(LilToonShaderMerger.Build(sb).Success, Is.True);
+
+            var ga = ReadMetaGuid($"{outA}/custom.hlsl.meta");
+            var gb = ReadMetaGuid($"{outB}/custom.hlsl.meta");
+            Assert.That(ga, Is.Not.EqualTo(gb), "different shaderName must yield different guids");
+
+            AssetDatabase.DeleteAsset(outA);
+            AssetDatabase.DeleteAsset(outB);
+            Object.DestroyImmediate(sa);
+            Object.DestroyImmediate(sb);
+        }
+
+        [Test]
+        public void Build_OverwritesPreExistingRandomMeta()
+        {
+            var outFolder = "Assets/_temp_merge_out_overwrite";
+            if (AssetDatabase.IsValidFolder(outFolder)) AssetDatabase.DeleteAsset(outFolder);
+            AssetDatabase.CreateFolder("Assets", "_temp_merge_out_overwrite");
+
+            var settings = ScriptableObject.CreateInstance<LilToonShaderMergerSettings>();
+            settings.shaderName = "Test/Overwrite";
+            settings.sourceFolders = new[] {
+                AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_a"),
+            };
+            settings.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(outFolder);
+
+            // First build to establish deterministic guid.
+            Assert.That(LilToonShaderMerger.Build(settings).Success, Is.True);
+            var expectedGuid = ReadMetaGuid($"{outFolder}/custom.hlsl.meta");
+            Assert.That(expectedGuid, Is.Not.Null);
+
+            // Overwrite custom.hlsl.meta with a random guid.
+            System.IO.File.WriteAllText(
+                $"{outFolder}/custom.hlsl.meta",
+                "fileFormatVersion: 2\nguid: ffffffffffffffffffffffffffffffff\nDefaultImporter:\n  externalObjects: {}\n  userData: \n  assetBundleName: \n  assetBundleVariant: \n");
+
+            // Build again; deterministic guid should be restored.
+            Assert.That(LilToonShaderMerger.Build(settings).Success, Is.True);
+            var afterGuid = ReadMetaGuid($"{outFolder}/custom.hlsl.meta");
+            Assert.That(afterGuid, Is.EqualTo(expectedGuid));
+
+            AssetDatabase.DeleteAsset(outFolder);
             Object.DestroyImmediate(settings);
         }
     }
