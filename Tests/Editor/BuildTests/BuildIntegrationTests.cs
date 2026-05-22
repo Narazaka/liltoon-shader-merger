@@ -11,17 +11,26 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         const string FixtureRoot =
             "Packages/net.narazaka.unity.liltoon-shader-merger/Tests/Editor/Fixtures";
 
+        static readonly string[] TempOutputDirs =
+        {
+            "Assets/_batch_merge_tests", "Assets/_motchiri_uzumore_test", "Assets/_temp_merge_out",
+            "Assets/_temp_merge_out_det", "Assets/_temp_merge_out_n1", "Assets/_temp_merge_out_n2",
+            "Assets/_temp_merge_out_overwrite",
+        };
+
         [SetUp]
         public void SetUp()
         {
-            // 既存の workspace 出力 (バッチテスト等の手動実行で残った壊れた upstream Fur シェーダー) を削除
-            // → Unity が AssetDatabase.Refresh で再コンパイル試行する際の Unhandled なシェーダーエラーを防ぐ
-            foreach (var dir in new[] { "Assets/_batch_merge_tests", "Assets/_motchiri_uzumore_test", "Assets/_temp_merge_out" })
+            // 無関係なコンソールエラー (プロジェクト内に元から存在する壊れたシェーダーが
+            // AssetDatabase.Refresh で再コンパイルされる等) でテストを落とさない。
+            // DeleteAsset 自体がその再コンパイルを誘発しうるため、削除より前に設定する。
+            LogAssert.ignoreFailingMessages = true;
+
+            // 前回テストやバッチ実行で残った出力フォルダを削除
+            foreach (var dir in TempOutputDirs)
             {
                 if (AssetDatabase.IsValidFolder(dir)) AssetDatabase.DeleteAsset(dir);
             }
-            // テスト中の他要因 (lilToon 自体のシェーダー再 import warning 等) も拾わない
-            LogAssert.ignoreFailingMessages = true;
         }
 
         [Test]
@@ -116,57 +125,42 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             return null;
         }
 
-        // Snapshot every .meta guid under <folder>, keyed by path relative to <folder>.
-        static Dictionary<string, string> SnapshotMetaGuids(string folder)
-        {
-            var d = new Dictionary<string, string>();
-            foreach (var f in System.IO.Directory.GetFiles(folder, "*.meta", System.IO.SearchOption.AllDirectories))
-            {
-                var rel = f.Substring(folder.Length).TrimStart('/', '\\').Replace('\\', '/');
-                d[rel] = ReadMetaGuid(f);
-            }
-            return d;
-        }
-
         [Test]
-        public void Build_SameShaderName_DifferentOutputFolders_ProducesIdenticalGuids()
+        public void Build_MetaGuids_AreDeterministicForShaderNameAndPath()
         {
-            var outA = "Assets/_temp_merge_out_a";
-            var outB = "Assets/_temp_merge_out_b";
-            foreach (var d in new[] { outA, outB })
-                if (AssetDatabase.IsValidFolder(d)) AssetDatabase.DeleteAsset(d);
-            AssetDatabase.CreateFolder("Assets", "_temp_merge_out_a");
-            AssetDatabase.CreateFolder("Assets", "_temp_merge_out_b");
+            // Determinism contract: every generated .meta GUID equals the pure value
+            // UUIDv5(shaderName, output-relative path), so the same shaderName/config
+            // reproduces identical GUIDs for any developer or CI run.
+            // Note: two coexisting copies in ONE project cannot share a GUID — Unity
+            // de-dupes asset GUIDs within a project — so determinism is verified against
+            // the pure function, not by building the same shader into two folders at once.
+            var outFolder = "Assets/_temp_merge_out_det";
+            if (AssetDatabase.IsValidFolder(outFolder)) AssetDatabase.DeleteAsset(outFolder);
+            AssetDatabase.CreateFolder("Assets", "_temp_merge_out_det");
 
-            LilToonShaderMergerSettings MakeSettings(string outFolder)
+            var settings = ScriptableObject.CreateInstance<LilToonShaderMergerSettings>();
+            settings.shaderName = "Test/Deterministic";
+            settings.sourceFolders = new[] {
+                AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_a"),
+                AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_b"),
+            };
+            settings.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(outFolder);
+
+            var r = LilToonShaderMerger.Build(settings);
+            Assert.That(r.Success, Is.True, string.Join("; ", r.Diagnostics));
+
+            var metas = System.IO.Directory.GetFiles(outFolder, "*.meta", System.IO.SearchOption.AllDirectories);
+            Assert.That(metas.Length, Is.GreaterThan(0), "build produced no .meta files");
+            foreach (var meta in metas)
             {
-                var s = ScriptableObject.CreateInstance<LilToonShaderMergerSettings>();
-                s.shaderName = "Test/CrossLocation";
-                s.sourceFolders = new[] {
-                    AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_a"),
-                    AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_b"),
-                };
-                s.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(outFolder);
-                return s;
+                var asset = meta.Substring(0, meta.Length - ".meta".Length);
+                var rel = MetaGuidEmitter.Relative(outFolder, asset);
+                var expected = MetaGuidEmitter.DeterministicGuid(settings.shaderName, rel);
+                Assert.That(ReadMetaGuid(meta), Is.EqualTo(expected), $"guid for {rel}");
             }
 
-            var sa = MakeSettings(outA);
-            var sb = MakeSettings(outB);
-            var ra = LilToonShaderMerger.Build(sa);
-            var rb = LilToonShaderMerger.Build(sb);
-            Assert.That(ra.Success, Is.True, string.Join("; ", ra.Diagnostics));
-            Assert.That(rb.Success, Is.True, string.Join("; ", rb.Diagnostics));
-
-            var guidsA = SnapshotMetaGuids(outA);
-            var guidsB = SnapshotMetaGuids(outB);
-            Assert.That(guidsA.Keys, Is.EquivalentTo(guidsB.Keys), "same shaderName must produce the same set of files");
-            foreach (var k in guidsA.Keys)
-                Assert.That(guidsB[k], Is.EqualTo(guidsA[k]), $"guid mismatch for {k}");
-
-            AssetDatabase.DeleteAsset(outA);
-            AssetDatabase.DeleteAsset(outB);
-            Object.DestroyImmediate(sa);
-            Object.DestroyImmediate(sb);
+            AssetDatabase.DeleteAsset(outFolder);
+            Object.DestroyImmediate(settings);
         }
 
         [Test]
