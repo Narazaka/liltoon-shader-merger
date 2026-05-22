@@ -78,14 +78,14 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             };
             settings.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(outFolder);
 
-            var r1 = LilToonShaderMerger.Build(settings);
+            var r1 = LilToonShaderMerger.Build(settings, refreshAssetDatabase: false);
             Assert.That(r1.Success, Is.True, "build 1 failed: " + string.Join("; ", r1.Diagnostics));
 
             var snapshot1 = new Dictionary<string, string>();
             foreach (var f in System.IO.Directory.GetFiles(outFolder, "*", System.IO.SearchOption.AllDirectories))
                 snapshot1[f] = System.IO.File.ReadAllText(f);
 
-            var r2 = LilToonShaderMerger.Build(settings);
+            var r2 = LilToonShaderMerger.Build(settings, refreshAssetDatabase: false);
             Assert.That(r2.Success, Is.True);
 
             foreach (var kv in snapshot1)
@@ -146,7 +146,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             };
             settings.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(outFolder);
 
-            var r = LilToonShaderMerger.Build(settings);
+            var r = LilToonShaderMerger.Build(settings, refreshAssetDatabase: false);
             Assert.That(r.Success, Is.True, string.Join("; ", r.Diagnostics));
 
             var metas = System.IO.Directory.GetFiles(outFolder, "*.meta", System.IO.SearchOption.AllDirectories);
@@ -186,8 +186,8 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
 
             var sa = Mk(outA, "Test/NameOne");
             var sb = Mk(outB, "Test/NameTwo");
-            Assert.That(LilToonShaderMerger.Build(sa).Success, Is.True);
-            Assert.That(LilToonShaderMerger.Build(sb).Success, Is.True);
+            Assert.That(LilToonShaderMerger.Build(sa, refreshAssetDatabase: false).Success, Is.True);
+            Assert.That(LilToonShaderMerger.Build(sb, refreshAssetDatabase: false).Success, Is.True);
 
             var ga = ReadMetaGuid($"{outA}/custom.hlsl.meta");
             var gb = ReadMetaGuid($"{outB}/custom.hlsl.meta");
@@ -214,7 +214,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             settings.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(outFolder);
 
             // First build to establish deterministic guid.
-            Assert.That(LilToonShaderMerger.Build(settings).Success, Is.True);
+            Assert.That(LilToonShaderMerger.Build(settings, refreshAssetDatabase: false).Success, Is.True);
             var expectedGuid = ReadMetaGuid($"{outFolder}/custom.hlsl.meta");
             Assert.That(expectedGuid, Is.Not.Null);
 
@@ -224,7 +224,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
                 "fileFormatVersion: 2\nguid: ffffffffffffffffffffffffffffffff\nDefaultImporter:\n  externalObjects: {}\n  userData: \n  assetBundleName: \n  assetBundleVariant: \n");
 
             // Build again; deterministic guid should be restored.
-            Assert.That(LilToonShaderMerger.Build(settings).Success, Is.True);
+            Assert.That(LilToonShaderMerger.Build(settings, refreshAssetDatabase: false).Success, Is.True);
             var afterGuid = ReadMetaGuid($"{outFolder}/custom.hlsl.meta");
             Assert.That(afterGuid, Is.EqualTo(expectedGuid));
 

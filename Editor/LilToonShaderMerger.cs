@@ -14,10 +14,12 @@ namespace Narazaka.Unity.LilToonShaderMerger
 
     public static class LilToonShaderMerger
     {
-        public static BuildResult DryRun(LilToonShaderMergerSettings s) => RunInternal(s, emit: false);
-        public static BuildResult Build(LilToonShaderMergerSettings s) => RunInternal(s, emit: true);
+        public static BuildResult DryRun(LilToonShaderMergerSettings s) => RunInternal(s, emit: false, refreshAssetDatabase: false);
+        // refreshAssetDatabase=false skips the trailing AssetDatabase.Refresh() — used by tests to
+        // avoid Unity re-importing/recompiling unrelated project assets as a side effect.
+        public static BuildResult Build(LilToonShaderMergerSettings s, bool refreshAssetDatabase = true) => RunInternal(s, emit: true, refreshAssetDatabase);
 
-        static BuildResult RunInternal(LilToonShaderMergerSettings s, bool emit)
+        static BuildResult RunInternal(LilToonShaderMergerSettings s, bool emit, bool refreshAssetDatabase)
         {
             var result = new BuildResult();
 
@@ -160,7 +162,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     CopySiblingInspectorScripts(parsed, outFolder, editorDir, s.shaderName, result);
                 }
 
-                AssetDatabase.Refresh();
+                if (refreshAssetDatabase) AssetDatabase.Refresh();
                 result.Success = true;
             }
             catch (System.Exception e)
