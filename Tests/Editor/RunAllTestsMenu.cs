@@ -9,12 +9,16 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
 {
     public static class RunAllTestsMenu
     {
+        // Held in a static field so the TestRunnerApi (and its registered callbacks) survive
+        // garbage collection until the run finishes; a local would be collected after Run() returns.
+        static TestRunnerApi _api;
+
         [MenuItem("Tools/lilToon Shader Merger/Test/Run All EditMode Tests")]
         public static void Run()
         {
-            var api = ScriptableObject.CreateInstance<TestRunnerApi>();
-            api.RegisterCallbacks(new Cb());
-            api.Execute(new ExecutionSettings(new Filter
+            _api = ScriptableObject.CreateInstance<TestRunnerApi>();
+            _api.RegisterCallbacks(new Cb());
+            _api.Execute(new ExecutionSettings(new Filter
             {
                 testMode = TestMode.EditMode,
                 assemblyNames = new[] { "net.narazaka.unity.liltoon-shader-merger.Tests.Editor" }
