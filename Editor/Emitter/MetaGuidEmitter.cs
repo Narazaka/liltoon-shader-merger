@@ -1,6 +1,6 @@
 using System;
 using System.Text;
-using Elephant.Uuidv5Utilities;
+using Narazaka.Unity.LilToonShaderMerger.ThirdParty.Uuidv5;
 
 namespace Narazaka.Unity.LilToonShaderMerger
 {

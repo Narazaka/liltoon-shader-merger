@@ -1,5 +1,5 @@
 using System;
-using Elephant.Uuidv5Utilities;
+using Narazaka.Unity.LilToonShaderMerger.ThirdParty.Uuidv5;
 using NUnit.Framework;
 
 namespace Narazaka.Unity.LilToonShaderMerger.Tests.ThirdParty

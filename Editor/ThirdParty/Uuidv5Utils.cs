@@ -1,13 +1,13 @@
 // Vendored from https://github.com/S-Elephant/Elephant.NuGets/blob/master/Elephant.Uuidv5/Uuidv5Utils.cs
 // Original: Copyright (c) 2022 SquirtingElephant, MIT License.
 // Full license: Editor/ThirdParty/Elephant.Uuidv5-LICENSE.txt
-// No functional modifications; only this header added.
+// Changes from original: this header added; namespace renamed to the host project's.
 
 using System;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Elephant.Uuidv5Utilities
+namespace Narazaka.Unity.LilToonShaderMerger.ThirdParty.Uuidv5
 {
     /// <summary>
     /// UUID v5 helper functions.
