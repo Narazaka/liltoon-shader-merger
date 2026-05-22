@@ -119,7 +119,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                 // .lilcontainer の union
                 var folderPaths = new List<string>();
                 foreach (var p in parsed) folderPaths.Add(p.FolderPath);
-                var containerFiles = LilContainerEmitter.CollectContainerFiles(folderPaths);
+                var containerFiles = new List<string>(LilContainerEmitter.CollectContainerFiles(folderPaths));
                 var lilcontainerImporter = LoadLilcontainerImporterBlock(parsed);
                 if (lilcontainerImporter == null && containerFiles.Count > 0)
                 {
