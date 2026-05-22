@@ -1,6 +1,6 @@
 {
   "name": "net.narazaka.unity.liltoon-shader-merger",
-  "version": "0.1.0-alpha.0",
+  "version": "0.2.0-alpha.0",
   "displayName": "lilToon Shader Merger",
   "description": "複数の lilToon カスタムシェーダーを 1 つのカスタムシェーダーへ自動合成する Unity Editor ツール",
   "author": {
