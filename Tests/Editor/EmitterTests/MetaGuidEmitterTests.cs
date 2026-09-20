@@ -29,6 +29,13 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         }
 
         [Test]
+        public void GuidKey_DependsOnOrder()
+        {
+            Assert.That(MetaGuidEmitter.GuidKey(new[] { "a", "b" }), Is.EqualTo("a\nb"));
+            Assert.That(MetaGuidEmitter.GuidKey(new[] { "b", "a" }), Is.Not.EqualTo(MetaGuidEmitter.GuidKey(new[] { "a", "b" })));
+        }
+
+        [Test]
         public void DeterministicGuid_Is32LowercaseHex()
         {
             var g = MetaGuidEmitter.DeterministicGuid("Merged/Foo", "custom.hlsl");

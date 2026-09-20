@@ -177,8 +177,8 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         public void Build_MetaGuids_AreDeterministicForShaderNameAndPath()
         {
             // Determinism contract: every generated .meta GUID equals the pure value
-            // UUIDv5(shaderName, output-relative path), so the same shaderName/config
-            // reproduces identical GUIDs for any developer or CI run.
+            // UUIDv5(GuidKey(source shader names), output-relative path), so the same
+            // combination of sources reproduces identical GUIDs for any developer or CI run.
             // Note: two coexisting copies in ONE project cannot share a GUID — Unity
             // de-dupes asset GUIDs within a project — so determinism is verified against
             // the pure function, not by building the same shader into two folders at once.
@@ -203,7 +203,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             {
                 var asset = meta.Substring(0, meta.Length - ".meta".Length);
                 var rel = MetaGuidEmitter.Relative(outFolder, asset);
-                var expected = MetaGuidEmitter.DeterministicGuid(settings.shaderName, rel);
+                var expected = MetaGuidEmitter.DeterministicGuid(MetaGuidEmitter.GuidKey(new[] { "sample_a", "sample_b" }), rel);
                 Assert.That(ReadMetaGuid(meta), Is.EqualTo(expected), $"guid for {rel}");
             }
 
@@ -212,7 +212,54 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         }
 
         [Test]
-        public void Build_DifferentShaderName_ProducesDifferentGuids()
+        public void Build_SameSourcesIntoSecondFolder_FailsAtomicallyOnGuidCollision()
+        {
+            var outA = "Assets/_temp_merge_out_n1";
+            var outB = "Assets/_temp_merge_out_n2";
+            AssetDatabase.CreateFolder("Assets", "_temp_merge_out_n1");
+            AssetDatabase.CreateFolder("Assets", "_temp_merge_out_n2");
+
+            LilToonShaderMergerSettings Mk(string outFolder, string name)
+            {
+                var s = ScriptableObject.CreateInstance<LilToonShaderMergerSettings>();
+                s.shaderName = name;
+                s.sourceFolders = new[] {
+                    AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_a"),
+                };
+                s.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(outFolder);
+                return s;
+            }
+
+            var sa = Mk(outA, "Test/CollideOne");
+            var sb = Mk(outB, "Test/CollideTwo");
+            try
+            {
+                var ra = LilToonShaderMerger.Build(sa, refreshAssetDatabase: false);
+                Assert.That(ra.Success, Is.True, string.Join("; ", ra.Diagnostics));
+                // AssetDatabase に A の GUID を認識させる (sample_a は Inspector を持たないので .cs は生成されず、ドメインリロードは起きない)
+                AssetDatabase.ImportAsset(outA, ImportAssetOptions.ImportRecursive);
+
+                var r = LilToonShaderMerger.Build(sb, refreshAssetDatabase: false);
+                Assert.That(r.Success, Is.False);
+                bool hasCollision = false;
+                foreach (var d in r.Diagnostics)
+                    if (d.Severity == Severity.Error && d.Category == "guid-collision") { hasCollision = true; break; }
+                Assert.That(hasCollision, Is.True, string.Join("; ", r.Diagnostics));
+                Assert.That(r.WrittenFiles, Is.Empty, "nothing may be written when a collision is detected");
+                Assert.That(System.IO.Directory.GetFiles(outB), Is.Empty, "output folder must stay untouched");
+            }
+            finally
+            {
+                // 失敗時も DB に GUID を残さない (残ると他テストが偽の衝突で落ちる)
+                AssetDatabase.DeleteAsset(outA);
+                AssetDatabase.DeleteAsset(outB);
+                Object.DestroyImmediate(sa);
+                Object.DestroyImmediate(sb);
+            }
+        }
+
+        [Test]
+        public void Build_DifferentShaderName_SameSources_ProducesSameGuids()
         {
             var outA = "Assets/_temp_merge_out_n1";
             var outB = "Assets/_temp_merge_out_n2";
@@ -232,19 +279,23 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
                 return s;
             }
 
+            // 同じ構成を 1 プロジェクト内に 2 つ同時に置くのは衝突ケースなので、A を読んで消してから B を作る
             var sa = Mk(outA, "Test/NameOne");
-            var sb = Mk(outB, "Test/NameTwo");
-            Assert.That(LilToonShaderMerger.Build(sa, refreshAssetDatabase: false).Success, Is.True);
-            Assert.That(LilToonShaderMerger.Build(sb, refreshAssetDatabase: false).Success, Is.True);
-
+            var ra = LilToonShaderMerger.Build(sa, refreshAssetDatabase: false);
+            Assert.That(ra.Success, Is.True, "build A: " + string.Join("; ", ra.Diagnostics));
             var ga = ReadMetaGuid($"{outA}/custom.hlsl.meta");
-            var gb = ReadMetaGuid($"{outB}/custom.hlsl.meta");
-            Assert.That(ga, Is.Not.EqualTo(gb), "different shaderName must yield different guids");
-
             AssetDatabase.DeleteAsset(outA);
-            AssetDatabase.DeleteAsset(outB);
             Object.DestroyImmediate(sa);
+
+            var sb = Mk(outB, "Test/NameTwo");
+            var rb = LilToonShaderMerger.Build(sb, refreshAssetDatabase: false);
+            Assert.That(rb.Success, Is.True, "build B: " + string.Join("; ", rb.Diagnostics));
+            var gb = ReadMetaGuid($"{outB}/custom.hlsl.meta");
+            AssetDatabase.DeleteAsset(outB);
             Object.DestroyImmediate(sb);
+
+            // 出力名は GUID に影響しない (同じ構成シェーダーなら別プロジェクト間でも参照が繋がる)
+            Assert.That(ga, Is.EqualTo(gb), "guid depends on source shaders only, not on output shaderName");
         }
 
         [Test]

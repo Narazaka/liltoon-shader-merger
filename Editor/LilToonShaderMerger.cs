@@ -12,6 +12,89 @@ namespace Narazaka.Unity.LilToonShaderMerger
         public List<string> WrittenFiles { get; } = new List<string>();
     }
 
+    // 出力を先に全て計画し、GUID 衝突を全件集めてから一括で書く。書く前に止めるので既存出力を壊さない
+    class EmitPlan
+    {
+        readonly BuildResult result;
+        readonly string outFolder;
+        readonly string guidKey;
+        readonly List<(string path, bool track, System.Action write)> steps = new List<(string, bool, System.Action)>();
+
+        public EmitPlan(BuildResult result, string outFolder, string guidKey)
+        {
+            this.result = result;
+            this.outFolder = outFolder;
+            this.guidKey = guidKey;
+        }
+
+        public void Write(string path, string content, string sourceImporterBlock = null)
+        {
+            steps.Add((path, true, () => File.WriteAllText(path, content)));
+            Meta(path, sourceImporterBlock, isFolder: false);
+        }
+
+        public void Copy(string srcPath, string destPath)
+        {
+            steps.Add((destPath, true, () => File.Copy(srcPath, destPath, true)));
+            // For copied files, reuse the source .meta importer block when present (handles unknown extensions and
+            // preserves things like ScriptedImporter script refs).
+            string sourceImporter = null;
+            var srcMeta = srcPath + ".meta";
+            if (File.Exists(srcMeta)) sourceImporter = LilToonShaderMerger.ExtractImporterBlock(File.ReadAllText(srcMeta));
+            var ext = Path.GetExtension(destPath).ToLowerInvariant();
+            if (sourceImporter == null && LilToonShaderMerger.IsUnknownImporterExtension(ext))
+            {
+                result.Diagnostics.Add(new Diagnostic
+                {
+                    Severity = Severity.Warning,
+                    Category = "meta-importer",
+                    Message = $"no source .meta found for '{Path.GetFileName(srcPath)}'; falling back to DefaultImporter (Unity may overwrite importer body on Refresh)"
+                });
+            }
+            Meta(destPath, sourceImporter, isFolder: false);
+        }
+
+        public void Dir(string dirPath)
+        {
+            steps.Add((dirPath, false, () => { if (!Directory.Exists(dirPath)) Directory.CreateDirectory(dirPath); }));
+            Meta(dirPath, null, isFolder: true);
+        }
+
+        void Meta(string assetPath, string sourceImporterBlock, bool isFolder)
+        {
+            var rel = MetaGuidEmitter.Relative(outFolder, assetPath);
+            var guid = MetaGuidEmitter.DeterministicGuid(guidKey, rel);
+            // GUID は構成シェーダー名から決まるので、同じ組み合わせを別フォルダに 2 回ビルドすると
+            // 同一プロジェクト内で GUID が重複し Unity が片方を無視する
+            // GUIDToAssetPath は削除済みアセットのパスを返すことがあるので実在確認する
+            var existing = AssetDatabase.GUIDToAssetPath(guid);
+            if (!string.IsNullOrEmpty(existing)
+                && (File.Exists(existing) || Directory.Exists(existing))
+                && !existing.Replace('\\', '/').StartsWith(outFolder.Replace('\\', '/').TrimEnd('/') + "/"))
+            {
+                result.Diagnostics.Add(new Diagnostic
+                {
+                    Severity = Severity.Error,
+                    Category = "guid-collision",
+                    Message = $"guid for '{rel}' is already used by '{existing}' (same source shaders merged into another folder). Delete that output or merge a different set of sources."
+                });
+            }
+            steps.Add((assetPath + ".meta", true, () => MetaGuidEmitter.WriteMeta(assetPath, guid, sourceImporterBlock, isFolder)));
+        }
+
+        // Error 診断があれば何も書かず false
+        public bool Commit()
+        {
+            foreach (var d in result.Diagnostics) if (d.Severity == Severity.Error) return false;
+            foreach (var (path, track, write) in steps)
+            {
+                write();
+                if (track) result.WrittenFiles.Add(path);
+            }
+            return true;
+        }
+    }
+
     public static class LilToonShaderMerger
     {
         public static BuildResult DryRun(LilToonShaderMergerSettings s) => RunInternal(s, emit: false, refreshAssetDatabase: false);
@@ -96,7 +179,11 @@ namespace Narazaka.Unity.LilToonShaderMerger
                 }
                 if (!Directory.Exists(outFolder)) Directory.CreateDirectory(outFolder);
 
-                WriteAndTrack(result, outFolder, s.shaderName, Path.Combine(outFolder, "custom.hlsl"), HlslEmitter.EmitCustomHlsl(mergedHlsl));
+                var sourceKeys = new List<string>();
+                foreach (var p in parsed) sourceKeys.Add(p.SourceKey);
+                var plan = new EmitPlan(result, outFolder, MetaGuidEmitter.GuidKey(sourceKeys));
+
+                plan.Write(Path.Combine(outFolder, "custom.hlsl"), HlslEmitter.EmitCustomHlsl(mergedHlsl));
 
                 var insertBodies = new List<(string, string)>();
                 foreach (var p in parsed)
@@ -104,10 +191,10 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     var ciPath = Path.Combine(p.FolderPath, "custom_insert.hlsl");
                     if (File.Exists(ciPath)) insertBodies.Add((p.SourceKey, File.ReadAllText(ciPath)));
                 }
-                WriteAndTrack(result, outFolder, s.shaderName, Path.Combine(outFolder, "custom_insert.hlsl"), HlslEmitter.EmitCustomInsertHlsl(insertBodies));
+                plan.Write(Path.Combine(outFolder, "custom_insert.hlsl"), HlslEmitter.EmitCustomInsertHlsl(insertBodies));
 
-                WriteAndTrack(result, outFolder, s.shaderName, Path.Combine(outFolder, "lilCustomShaderProperties.lilblock"), LilBlockEmitter.EmitProperties(mergedProps));
-                WriteAndTrack(result, outFolder, s.shaderName, Path.Combine(outFolder, "lilCustomShaderDatas.lilblock"), LilBlockEmitter.EmitDatas(mergedDatas));
+                plan.Write(Path.Combine(outFolder, "lilCustomShaderProperties.lilblock"), LilBlockEmitter.EmitProperties(mergedProps));
+                plan.Write(Path.Combine(outFolder, "lilCustomShaderDatas.lilblock"), LilBlockEmitter.EmitDatas(mergedDatas));
 
                 var insertBlockSources = new List<(string, string)>();
                 foreach (var p in parsed)
@@ -115,7 +202,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     if (!string.IsNullOrEmpty(p.InsertBlockText))
                         insertBlockSources.Add((p.SourceKey, p.InsertBlockText));
                 }
-                WriteAndTrack(result, outFolder, s.shaderName, Path.Combine(outFolder, "lilCustomShaderInsert.lilblock"),
+                plan.Write(Path.Combine(outFolder, "lilCustomShaderInsert.lilblock"),
                     LilBlockEmitter.EmitInsertBlock(insertBlockSources, s.dedupeIdenticalIncludes));
 
                 // .lilcontainer の union
@@ -141,26 +228,27 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         if (File.Exists(fp)) srcs.Add((p.SourceKey, File.ReadAllText(fp)));
                     }
                     var merged = LilContainerEmitter.MergeContainerText(srcs, result.Diagnostics);
-                    WriteAndTrack(result, outFolder, s.shaderName, Path.Combine(outFolder, fn), merged, lilcontainerImporter);
+                    plan.Write(Path.Combine(outFolder, fn), merged, lilcontainerImporter);
                 }
 
-                CopyExtraFiles(parsed, outFolder, s.shaderName, s.copyAllExtraFiles, result);
+                CopyExtraFiles(parsed, outFolder, plan, s.copyAllExtraFiles, result);
 
                 // Inspector
                 if (mergedInspectorCs != null)
                 {
                     var editorDir = Path.Combine(outFolder, "Editor");
-                    CreateDirAndTrackMeta(result, outFolder, s.shaderName, editorDir);
+                    plan.Dir(editorDir);
                     var className = !string.IsNullOrWhiteSpace(s.editorClassName) ? s.editorClassName : DeriveClassName(s.shaderName);
-                    WriteAndTrack(result, outFolder, s.shaderName, Path.Combine(editorDir, $"{className}.cs"), mergedInspectorCs);
-                    WriteAndTrack(result, outFolder, s.shaderName, Path.Combine(editorDir, $"{className}.Editor.asmdef"),
+                    plan.Write(Path.Combine(editorDir, $"{className}.cs"), mergedInspectorCs);
+                    plan.Write(Path.Combine(editorDir, $"{className}.Editor.asmdef"),
                         AsmdefEmitter.Emit($"{className}.Editor", FindLilToonEditorGuid()));
 
                     // Inspector .cs の同フォルダ内の sibling .cs (helper class 等) を出力側にコピー
                     // 例: HawaseGimmickShader の GUI_keys.cs / GUI_labels.cs (namespace KuukuuVirtualFactory.HawaseGimmickShader)
-                    CopySiblingInspectorScripts(parsed, outFolder, editorDir, s.shaderName, result);
+                    CopySiblingInspectorScripts(parsed, editorDir, plan, result);
                 }
 
+                if (!plan.Commit()) return result;
                 if (refreshAssetDatabase) AssetDatabase.Refresh();
                 result.Success = true;
             }
@@ -176,37 +264,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
             return result;
         }
 
-        // shaderName/outFolder are captured at the call site and passed through for relative path derivation.
-        static void WriteAndTrack(BuildResult r, string outFolder, string shaderName, string path, string content, string sourceImporterBlock = null)
-        {
-            File.WriteAllText(path, content);
-            r.WrittenFiles.Add(path);
-            EmitMetaAndTrack(r, outFolder, shaderName, path, sourceImporterBlock, isFolder: false);
-        }
-
-        static void CopyAndTrackMeta(BuildResult r, string outFolder, string shaderName, string srcPath, string destPath)
-        {
-            File.Copy(srcPath, destPath, true);
-            r.WrittenFiles.Add(destPath);
-            // For copied files, reuse the source .meta importer block when present (handles unknown extensions and
-            // preserves things like ScriptedImporter script refs).
-            string sourceImporter = null;
-            var srcMeta = srcPath + ".meta";
-            if (File.Exists(srcMeta)) sourceImporter = ExtractImporterBlock(File.ReadAllText(srcMeta));
-            var ext = Path.GetExtension(destPath).ToLowerInvariant();
-            if (sourceImporter == null && IsUnknownImporterExtension(ext))
-            {
-                r.Diagnostics.Add(new Diagnostic
-                {
-                    Severity = Severity.Warning,
-                    Category = "meta-importer",
-                    Message = $"no source .meta found for '{Path.GetFileName(srcPath)}'; falling back to DefaultImporter (Unity may overwrite importer body on Refresh)"
-                });
-            }
-            EmitMetaAndTrack(r, outFolder, shaderName, destPath, sourceImporter, isFolder: false);
-        }
-
-        static bool IsUnknownImporterExtension(string ext)
+        internal static bool IsUnknownImporterExtension(string ext)
         {
             switch (ext)
             {
@@ -220,22 +278,8 @@ namespace Narazaka.Unity.LilToonShaderMerger
             }
         }
 
-        static void CreateDirAndTrackMeta(BuildResult r, string outFolder, string shaderName, string dirPath)
-        {
-            if (!Directory.Exists(dirPath)) Directory.CreateDirectory(dirPath);
-            EmitMetaAndTrack(r, outFolder, shaderName, dirPath, sourceImporterBlock: null, isFolder: true);
-        }
-
-        static void EmitMetaAndTrack(BuildResult r, string outFolder, string shaderName, string assetPath, string sourceImporterBlock, bool isFolder)
-        {
-            var rel = MetaGuidEmitter.Relative(outFolder, assetPath);
-            var guid = MetaGuidEmitter.DeterministicGuid(shaderName, rel);
-            MetaGuidEmitter.WriteMeta(assetPath, guid, sourceImporterBlock, isFolder);
-            r.WrittenFiles.Add(assetPath + ".meta");
-        }
-
         // Extract everything after the "guid: ..." line from a .meta file's text.
-        static string ExtractImporterBlock(string metaText)
+        internal static string ExtractImporterBlock(string metaText)
         {
             var lines = metaText.Replace("\r\n", "\n").Split('\n');
             var sb = new System.Text.StringBuilder();
@@ -272,7 +316,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
 
         // Inspector .cs の同フォルダ内の sibling .cs (helper class 等) を merged Inspector の Editor フォルダにコピー
         // Inspector が lilToonInspector を継承する class なら、それと同居する helper .cs を持ってこないと参照が解決しない
-        static void CopySiblingInspectorScripts(List<ParsedSource> parsed, string outFolder, string outEditorDir, string shaderName, BuildResult result)
+        static void CopySiblingInspectorScripts(List<ParsedSource> parsed, string outEditorDir, EmitPlan plan, BuildResult result)
         {
             var copiedNames = new Dictionary<string, string>(); // filename → sourceKey
             foreach (var p in parsed)
@@ -298,7 +342,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         continue;
                     }
                     var dest = Path.Combine(outEditorDir, name);
-                    CopyAndTrackMeta(result, outFolder, shaderName, f, dest);
+                    plan.Copy(f, dest);
                     copiedNames[name] = p.SourceKey;
                 }
             }
@@ -318,7 +362,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
         // lilToon の container importer は Assets/ Packages/ で始まらない #include にソースフォルダのパスを前置する。
         // そのため .hlsl / .lilcontainer / .lilblock が参照する同フォルダ内ファイルは出力側にも無いとコンパイルできない。
         // copyAll はマクロ経由の include 等、参照追跡で拾えないケースの逃げ道
-        static void CopyExtraFiles(List<ParsedSource> parsed, string outFolder, string shaderName, bool copyAll, BuildResult result)
+        static void CopyExtraFiles(List<ParsedSource> parsed, string outFolder, EmitPlan plan, bool copyAll, BuildResult result)
         {
             var copiedNames = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase); // name → first sourceKey copied
             foreach (var p in parsed)
@@ -339,9 +383,10 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         return;
                     }
                     var dest = Path.Combine(outFolder, name);
-                    var destDir = Path.GetDirectoryName(dest);
-                    if (destDir != outFolder) CreateDirAndTrackMeta(result, outFolder, shaderName, destDir);
-                    CopyAndTrackMeta(result, outFolder, shaderName, src, dest);
+                    // GetDirectoryName は '\' 区切りを返すので正規化して比較 (outFolder 自身の .meta を書いてはいけない)
+                    var destDir = Path.GetDirectoryName(dest).Replace('\\', '/');
+                    if (destDir != outFolder.Replace('\\', '/').TrimEnd('/')) plan.Dir(destDir);
+                    plan.Copy(src, dest);
                     copiedNames[name] = p.SourceKey;
                 }
 

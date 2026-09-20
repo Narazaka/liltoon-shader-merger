@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using Narazaka.Unity.LilToonShaderMerger.ThirdParty.Uuidv5;
 
@@ -15,13 +16,24 @@ namespace Narazaka.Unity.LilToonShaderMerger
         static readonly Guid NamespaceGuid = new Guid("c4f1a2e8-7d3b-4e5c-9a06-1f8e2d4b6a09");
 
         /// <summary>
-        /// 32-char lowercase hex GUID derived from (shaderName, relativePath).
+        /// Key identifying a merge by its constituent shaders (SourceKey of each source, in
+        /// sourceFolders order). Output shaderName / outputFolder are deliberately excluded so that
+        /// the same combination yields the same GUIDs in any project.
         /// </summary>
-        public static string DeterministicGuid(string shaderName, string relativePath)
+        public static string GuidKey(IEnumerable<string> sourceShaderNames)
         {
-            if (shaderName == null) throw new ArgumentNullException(nameof(shaderName));
+            if (sourceShaderNames == null) throw new ArgumentNullException(nameof(sourceShaderNames));
+            return string.Join("\n", sourceShaderNames);
+        }
+
+        /// <summary>
+        /// 32-char lowercase hex GUID derived from (guidKey, relativePath).
+        /// </summary>
+        public static string DeterministicGuid(string guidKey, string relativePath)
+        {
+            if (guidKey == null) throw new ArgumentNullException(nameof(guidKey));
             if (relativePath == null) throw new ArgumentNullException(nameof(relativePath));
-            var name = shaderName + "\n" + relativePath.Replace('\\', '/');
+            var name = guidKey + "\n" + relativePath.Replace('\\', '/');
             var g = Uuidv5Utils.GenerateGuid(NamespaceGuid, name);
             return g.ToString("N"); // 32 lowercase hex, no dashes; deterministic
         }
