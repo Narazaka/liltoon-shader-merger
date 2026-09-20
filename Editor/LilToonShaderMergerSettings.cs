@@ -25,7 +25,9 @@ namespace Narazaka.Unity.LilToonShaderMerger
 
         [Header("Options")]
         public bool dedupeIdenticalIncludes = true;
-        public bool copyExtraFiles = false;
+        [Tooltip("custom.hlsl / custom_insert.hlsl / *.lilblock 以外のファイル (追加の .hlsl 等) を出力フォルダへコピーする。" +
+                 "元シェーダーの .lilcontainer がそれらを #include している場合、オフにすると生成シェーダーがコンパイルエラーになる。")]
+        public bool copyExtraFiles = true;
         public InspectorStrategy inspectorStrategy = InspectorStrategy.MergeOrSkip;
     }
 }
