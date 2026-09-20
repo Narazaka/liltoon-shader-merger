@@ -28,6 +28,10 @@ https://github.com/Narazaka/liltoon-shader-merger/releases/latest から `net.na
 
 ## Changelog
 
+- 0.3.0-alpha.0:
+  - (fix): 元 Inspector が自クラスを参照するメンバー（例: Uzumore 1.0.20 の `Copy && Convert` メニュー）を含む場合、合成後に未定義型エラーになる問題を修正
+  - (feature): ソースの `.hlsl` / `.lilcontainer` / `.lilblock` が `#include` するファイル（`lil_tessellation_cancel.hlsl` 等）を依存関係を辿って常にコピーするようにした
+  - (breaking): `copyExtraFiles` 設定を廃止。代わりに `copyAllExtraFiles`（デフォルト off）を追加。on にすると `#include` されていないファイルもソースフォルダから全てコピーする
 - 0.2.0-alpha.0:
   - (feature): 合成出力の `.meta` GUID を決定論化（`UUIDv5(ツール固有名前空間, shaderName + 出力相対パス)`）。同じ shaderName・同じ構成なら誰がビルドしても同じ GUID になる。
   - (breaking): 既存ビルドのランダム GUID `.meta` は本バージョン以降の Build で決定論値に上書きされる。初回マイグレーション時のみ、その合成シェーダーを参照していたマテリアルの参照が一度切れる。
