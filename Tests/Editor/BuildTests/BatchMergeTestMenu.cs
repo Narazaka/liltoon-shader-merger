@@ -187,7 +187,6 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             settings.shaderName = $"BatchMerge/{outName}";
             settings.sourceFolders = sourceFolders.ToArray();
             settings.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(outFolder);
-            settings.copyExtraFiles = true;
 
             var result = LilToonShaderMerger.Build(settings);
             Object.DestroyImmediate(settings);

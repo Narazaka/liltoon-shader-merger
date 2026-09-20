@@ -144,8 +144,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     WriteAndTrack(result, outFolder, s.shaderName, Path.Combine(outFolder, fn), merged, lilcontainerImporter);
                 }
 
-                // テンプレ外ファイル (extra .hlsl 等) の検出
-                CopyOrWarnExtraFiles(parsed, outFolder, s.shaderName, s.copyExtraFiles, result);
+                CopyReferencedExtraFiles(parsed, outFolder, s.shaderName, result);
 
                 // Inspector
                 if (mergedInspectorCs != null)
@@ -305,7 +304,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
             }
         }
 
-        // テンプレートに含まれない HLSL/その他のファイルを検出し、copyExtraFiles=true ならコピー
+        // 正規ファイル (merger が再生成するもの)。 これら以外で #include されているファイルをソースフォルダからコピーする
         static readonly HashSet<string> CanonicalFiles = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase)
         {
             "custom.hlsl", "custom_insert.hlsl",
@@ -313,44 +312,52 @@ namespace Narazaka.Unity.LilToonShaderMerger
             "lilCustomShaderInsert.lilblock",
             "lilCustomShaderDatas.lilblock",
         };
+        static readonly System.Text.RegularExpressions.Regex IncludeRegex =
+            new System.Text.RegularExpressions.Regex(@"#include\s+""([^""]+)""");
 
-        static void CopyOrWarnExtraFiles(List<ParsedSource> parsed, string outFolder, string shaderName, bool copyExtras, BuildResult result)
+        // lilToon の container importer は Assets/ Packages/ で始まらない #include にソースフォルダのパスを前置する。
+        // そのため .hlsl / .lilcontainer / .lilblock が参照する同フォルダ内ファイルは出力側にも無いとコンパイルできない
+        static void CopyReferencedExtraFiles(List<ParsedSource> parsed, string outFolder, string shaderName, BuildResult result)
         {
-            var copiedNames = new Dictionary<string, string>(); // name → first sourceKey copied
+            var copiedNames = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase); // name → first sourceKey copied
             foreach (var p in parsed)
             {
                 if (!Directory.Exists(p.FolderPath)) continue;
+                var queue = new Queue<string>();
                 foreach (var f in Directory.GetFiles(p.FolderPath))
                 {
-                    var name = Path.GetFileName(f);
-                    if (name.EndsWith(".meta", System.StringComparison.OrdinalIgnoreCase)) continue;
-                    if (name.EndsWith(".lilcontainer", System.StringComparison.OrdinalIgnoreCase)) continue;
-                    if (CanonicalFiles.Contains(name)) continue;
-
-                    if (copyExtras)
+                    var ext = Path.GetExtension(f).ToLowerInvariant();
+                    if (ext == ".hlsl" || ext == ".lilcontainer" || ext == ".lilblock") queue.Enqueue(f);
+                }
+                var visited = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+                while (queue.Count > 0)
+                {
+                    var file = queue.Dequeue();
+                    if (!visited.Add(file)) continue;
+                    foreach (System.Text.RegularExpressions.Match m in IncludeRegex.Matches(File.ReadAllText(file)))
                     {
-                        if (copiedNames.TryGetValue(name, out var prevKey) && prevKey != p.SourceKey)
+                        var name = m.Groups[1].Value;
+                        if (name.StartsWith("Assets/") || name.StartsWith("Packages/")) continue;
+                        if (CanonicalFiles.Contains(name)) continue;
+                        var src = Path.Combine(p.FolderPath, name);
+                        if (!File.Exists(src)) continue; // lilToon 本体側の include 等
+                        queue.Enqueue(src);
+                        if (copiedNames.TryGetValue(name, out var prevKey))
                         {
-                            result.Diagnostics.Add(new Diagnostic
-                            {
-                                Severity = Severity.Warning,
-                                Category = "extra-file",
-                                Message = $"extra file '{name}' name collision between {prevKey} and {p.SourceKey}; using {prevKey} (first wins)"
-                            });
+                            if (prevKey != p.SourceKey)
+                                result.Diagnostics.Add(new Diagnostic
+                                {
+                                    Severity = Severity.Warning,
+                                    Category = "extra-file",
+                                    Message = $"extra file '{name}' name collision between {prevKey} and {p.SourceKey}; using {prevKey} (first wins)"
+                                });
                             continue;
                         }
                         var dest = Path.Combine(outFolder, name);
-                        CopyAndTrackMeta(result, outFolder, shaderName, f, dest);
+                        var destDir = Path.GetDirectoryName(dest);
+                        if (destDir != outFolder) CreateDirAndTrackMeta(result, outFolder, shaderName, destDir);
+                        CopyAndTrackMeta(result, outFolder, shaderName, src, dest);
                         copiedNames[name] = p.SourceKey;
-                    }
-                    else
-                    {
-                        result.Diagnostics.Add(new Diagnostic
-                        {
-                            Severity = Severity.Warning,
-                            Category = "extra-file",
-                            Message = $"extra file '{name}' in {p.SourceKey} not copied (set copyExtraFiles=true to include). Merged shader may fail to compile if it references this file."
-                        });
                     }
                 }
             }

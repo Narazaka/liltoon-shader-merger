@@ -12,7 +12,6 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             var s = ScriptableObject.CreateInstance<LilToonShaderMergerSettings>();
             Assert.That(s.shaderName, Is.Empty);
             Assert.That(s.dedupeIdenticalIncludes, Is.True);
-            Assert.That(s.copyExtraFiles, Is.True);
             Assert.That(s.propertyConflict, Is.EqualTo(ConflictStrategy.ErrorOut));
             Assert.That(s.functionConflict, Is.EqualTo(ConflictStrategy.ErrorOut));
             Assert.That(s.replaceConflict,  Is.EqualTo(ConflictStrategy.ErrorOut));

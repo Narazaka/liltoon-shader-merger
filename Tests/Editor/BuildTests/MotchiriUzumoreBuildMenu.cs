@@ -24,7 +24,6 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
                 AssetDatabase.LoadAssetAtPath<DefaultAsset>("Packages/jp.sigmal00.uzumore-shader/Runtime/Shaders"),
             };
             settings.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(OutFolder);
-            settings.copyExtraFiles = true;
 
             Debug.Log("[MotchiriUzumoreBuild] starting Build");
             var result = LilToonShaderMerger.Build(settings);

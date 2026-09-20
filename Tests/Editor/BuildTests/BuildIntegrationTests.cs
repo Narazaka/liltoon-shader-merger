@@ -15,7 +15,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         {
             "Assets/_batch_merge_tests", "Assets/_motchiri_uzumore_test", "Assets/_temp_merge_out",
             "Assets/_temp_merge_out_det", "Assets/_temp_merge_out_n1", "Assets/_temp_merge_out_n2",
-            "Assets/_temp_merge_out_overwrite",
+            "Assets/_temp_merge_out_overwrite", "Assets/_temp_merge_out_extra",
         };
 
         [SetUp]
@@ -59,6 +59,30 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             var result = LilToonShaderMerger.DryRun(settings);
             var msgs = string.Join("; ", result.Diagnostics);
             Assert.That(result.Diagnostics, Is.Empty, "expected no diagnostics, got: " + msgs);
+            Object.DestroyImmediate(settings);
+        }
+
+        [Test]
+        public void Build_CopiesIncludedExtraFilesTransitively_SkipsUnreferenced()
+        {
+            var outFolder = "Assets/_temp_merge_out_extra";
+            AssetDatabase.CreateFolder("Assets", "_temp_merge_out_extra");
+
+            var settings = ScriptableObject.CreateInstance<LilToonShaderMergerSettings>();
+            settings.shaderName = "Test/Extra";
+            settings.sourceFolders = new[] {
+                AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_a"),
+            };
+            settings.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(outFolder);
+
+            var r = LilToonShaderMerger.Build(settings, refreshAssetDatabase: false);
+            Assert.That(r.Success, Is.True, "build failed: " + string.Join("; ", r.Diagnostics));
+            // custom_insert.hlsl → extra_dep.hlsl → extra_dep2.hlsl の連鎖を辿ってコピーされる
+            Assert.That(System.IO.File.Exists($"{outFolder}/extra_dep.hlsl"), Is.True);
+            Assert.That(System.IO.File.Exists($"{outFolder}/extra_dep2.hlsl"), Is.True);
+            Assert.That(System.IO.File.Exists($"{outFolder}/unreferenced.hlsl"), Is.False);
+
+            AssetDatabase.DeleteAsset(outFolder);
             Object.DestroyImmediate(settings);
         }
 
