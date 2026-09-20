@@ -144,7 +144,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     WriteAndTrack(result, outFolder, s.shaderName, Path.Combine(outFolder, fn), merged, lilcontainerImporter);
                 }
 
-                CopyReferencedExtraFiles(parsed, outFolder, s.shaderName, result);
+                CopyExtraFiles(parsed, outFolder, s.shaderName, s.copyAllExtraFiles, result);
 
                 // Inspector
                 if (mergedInspectorCs != null)
@@ -316,18 +316,47 @@ namespace Narazaka.Unity.LilToonShaderMerger
             new System.Text.RegularExpressions.Regex(@"#include\s+""([^""]+)""");
 
         // lilToon の container importer は Assets/ Packages/ で始まらない #include にソースフォルダのパスを前置する。
-        // そのため .hlsl / .lilcontainer / .lilblock が参照する同フォルダ内ファイルは出力側にも無いとコンパイルできない
-        static void CopyReferencedExtraFiles(List<ParsedSource> parsed, string outFolder, string shaderName, BuildResult result)
+        // そのため .hlsl / .lilcontainer / .lilblock が参照する同フォルダ内ファイルは出力側にも無いとコンパイルできない。
+        // copyAll はマクロ経由の include 等、参照追跡で拾えないケースの逃げ道
+        static void CopyExtraFiles(List<ParsedSource> parsed, string outFolder, string shaderName, bool copyAll, BuildResult result)
         {
             var copiedNames = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase); // name → first sourceKey copied
             foreach (var p in parsed)
             {
                 if (!Directory.Exists(p.FolderPath)) continue;
+
+                void Copy(string name, string src)
+                {
+                    if (copiedNames.TryGetValue(name, out var prevKey))
+                    {
+                        if (prevKey != p.SourceKey)
+                            result.Diagnostics.Add(new Diagnostic
+                            {
+                                Severity = Severity.Warning,
+                                Category = "extra-file",
+                                Message = $"extra file '{name}' name collision between {prevKey} and {p.SourceKey}; using {prevKey} (first wins)"
+                            });
+                        return;
+                    }
+                    var dest = Path.Combine(outFolder, name);
+                    var destDir = Path.GetDirectoryName(dest);
+                    if (destDir != outFolder) CreateDirAndTrackMeta(result, outFolder, shaderName, destDir);
+                    CopyAndTrackMeta(result, outFolder, shaderName, src, dest);
+                    copiedNames[name] = p.SourceKey;
+                }
+
                 var queue = new Queue<string>();
                 foreach (var f in Directory.GetFiles(p.FolderPath))
                 {
+                    var name = Path.GetFileName(f);
                     var ext = Path.GetExtension(f).ToLowerInvariant();
-                    if (ext == ".hlsl" || ext == ".lilcontainer" || ext == ".lilblock") queue.Enqueue(f);
+                    if (ext == ".meta" || ext == ".lilcontainer" || CanonicalFiles.Contains(name))
+                    {
+                        if (ext == ".lilcontainer" || ext == ".hlsl" || ext == ".lilblock") queue.Enqueue(f);
+                        continue;
+                    }
+                    if (copyAll) Copy(name, f);
+                    if (ext == ".hlsl" || ext == ".lilblock") queue.Enqueue(f);
                 }
                 var visited = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
                 while (queue.Count > 0)
@@ -342,22 +371,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         var src = Path.Combine(p.FolderPath, name);
                         if (!File.Exists(src)) continue; // lilToon 本体側の include 等
                         queue.Enqueue(src);
-                        if (copiedNames.TryGetValue(name, out var prevKey))
-                        {
-                            if (prevKey != p.SourceKey)
-                                result.Diagnostics.Add(new Diagnostic
-                                {
-                                    Severity = Severity.Warning,
-                                    Category = "extra-file",
-                                    Message = $"extra file '{name}' name collision between {prevKey} and {p.SourceKey}; using {prevKey} (first wins)"
-                                });
-                            continue;
-                        }
-                        var dest = Path.Combine(outFolder, name);
-                        var destDir = Path.GetDirectoryName(dest);
-                        if (destDir != outFolder) CreateDirAndTrackMeta(result, outFolder, shaderName, destDir);
-                        CopyAndTrackMeta(result, outFolder, shaderName, src, dest);
-                        copiedNames[name] = p.SourceKey;
+                        Copy(name, src);
                     }
                 }
             }

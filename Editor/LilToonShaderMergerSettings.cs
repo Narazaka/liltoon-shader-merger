@@ -25,6 +25,9 @@ namespace Narazaka.Unity.LilToonShaderMerger
 
         [Header("Options")]
         public bool dedupeIdenticalIncludes = true;
+        [Tooltip("#include で参照されているファイルは常にコピーされる。オンにすると、正規ファイルと .lilcontainer 以外のソースフォルダ内の全ファイルもコピーする " +
+                 "(マクロ経由の include 等、参照追跡で拾えない場合向け)。")]
+        public bool copyAllExtraFiles = false;
         public InspectorStrategy inspectorStrategy = InspectorStrategy.MergeOrSkip;
     }
 }

@@ -87,6 +87,30 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         }
 
         [Test]
+        public void Build_CopyAllExtraFiles_CopiesUnreferenced()
+        {
+            var outFolder = "Assets/_temp_merge_out_extra";
+            AssetDatabase.CreateFolder("Assets", "_temp_merge_out_extra");
+
+            var settings = ScriptableObject.CreateInstance<LilToonShaderMergerSettings>();
+            settings.shaderName = "Test/ExtraAll";
+            settings.sourceFolders = new[] {
+                AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_a"),
+            };
+            settings.outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(outFolder);
+            settings.copyAllExtraFiles = true;
+
+            var r = LilToonShaderMerger.Build(settings, refreshAssetDatabase: false);
+            Assert.That(r.Success, Is.True, "build failed: " + string.Join("; ", r.Diagnostics));
+            Assert.That(System.IO.File.Exists($"{outFolder}/extra_dep2.hlsl"), Is.True);
+            Assert.That(System.IO.File.Exists($"{outFolder}/unreferenced.hlsl"), Is.True);
+            Assert.That(r.Diagnostics, Is.Empty, "unexpected diagnostics: " + string.Join("; ", r.Diagnostics));
+
+            AssetDatabase.DeleteAsset(outFolder);
+            Object.DestroyImmediate(settings);
+        }
+
+        [Test]
         public void Build_TwoTimes_ProducesIdenticalFiles()
         {
             var outFolder = "Assets/_temp_merge_out";
