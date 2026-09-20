@@ -19,7 +19,10 @@ namespace Narazaka.Unity.LilToonShaderMerger
         readonly string outFolder;
         readonly string guidKey;
         readonly List<(string path, bool track, System.Action write)> steps = new List<(string, bool, System.Action)>();
-        readonly HashSet<string> planned = new HashSet<string>();
+        // 正規化した出力相対パス → ディレクトリか。Windows では大文字小文字を区別しない
+        readonly Dictionary<string, bool> planned = new Dictionary<string, bool>(PathComparer);
+        static readonly System.StringComparer PathComparer =
+            Application.platform == RuntimePlatform.WindowsEditor ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
         public EmitPlan(BuildResult result, string outFolder, string guidKey)
         {
@@ -28,29 +31,43 @@ namespace Narazaka.Unity.LilToonShaderMerger
             this.guidKey = guidKey;
         }
 
-        // 同じ出力パスを 2 回計画するのはソース間の名前衝突の取りこぼし。後勝ちで黙って上書きせず Error にする
-        bool Claim(string assetPath)
+        // "./x" や ".." を潰した出力相対パス。GUID 導出と重複検知の両方でこれを使う
+        string Key(string assetPath)
         {
-            if (planned.Add(MetaGuidEmitter.Relative(outFolder, assetPath))) return true;
-            result.Diagnostics.Add(new Diagnostic
+            var rel = MetaGuidEmitter.TryRelative(Path.GetFullPath(outFolder), Path.GetFullPath(assetPath));
+            if (rel == null) throw new System.ArgumentException($"path '{assetPath}' is not under output folder '{outFolder}'");
+            return rel;
+        }
+
+        // 同じ出力パスを 2 回計画するのはソース間の名前衝突の取りこぼし。後勝ちで黙って上書きせず Error にする
+        bool Claim(string assetPath, bool isDir)
+        {
+            var key = Key(assetPath);
+            if (planned.TryGetValue(key, out var plannedIsDir))
             {
-                Severity = Severity.Error,
-                Category = "output",
-                Message = $"output '{MetaGuidEmitter.Relative(outFolder, assetPath)}' would be written twice"
-            });
-            return false;
+                if (isDir && plannedIsDir) return false; // 同じディレクトリの再計画は無害なので黙って 1 回にまとめる
+                result.Diagnostics.Add(new Diagnostic
+                {
+                    Severity = Severity.Error,
+                    Category = "output",
+                    Message = $"output '{key}' would be written twice"
+                });
+                return false;
+            }
+            planned[key] = isDir;
+            return true;
         }
 
         public void Write(string path, string content, string sourceImporterBlock = null)
         {
-            if (!Claim(path)) return;
+            if (!Claim(path, isDir: false)) return;
             steps.Add((path, true, () => File.WriteAllText(path, content)));
             Meta(path, sourceImporterBlock, isFolder: false);
         }
 
         public void Copy(string srcPath, string destPath)
         {
-            if (!Claim(destPath)) return;
+            if (!Claim(destPath, isDir: false)) return;
             steps.Add((destPath, true, () => File.Copy(srcPath, destPath, true)));
             // For copied files, reuse the source .meta importer block when present (handles unknown extensions and
             // preserves things like ScriptedImporter script refs).
@@ -70,25 +87,24 @@ namespace Narazaka.Unity.LilToonShaderMerger
             Meta(destPath, sourceImporter, isFolder: false);
         }
 
-        // 同じディレクトリは何度呼ばれても 1 回だけ計画する (複数ファイルが同じサブフォルダに入る場合)
         public void Dir(string dirPath)
         {
-            if (!planned.Add(MetaGuidEmitter.Relative(outFolder, dirPath))) return;
+            if (!Claim(dirPath, isDir: true)) return;
             steps.Add((dirPath, false, () => { if (!Directory.Exists(dirPath)) Directory.CreateDirectory(dirPath); }));
             Meta(dirPath, null, isFolder: true);
         }
 
         void Meta(string assetPath, string sourceImporterBlock, bool isFolder)
         {
-            var rel = MetaGuidEmitter.Relative(outFolder, assetPath);
+            var rel = Key(assetPath);
             var guid = MetaGuidEmitter.DeterministicGuid(guidKey, rel);
             // GUID は構成シェーダー名から決まるので、同じ組み合わせを別フォルダに 2 回ビルドすると
-            // 同一プロジェクト内で GUID が重複し Unity が片方を無視する
+            // 同一プロジェクト内で GUID が重複し Unity が片方を無視する。許容するのは前回ビルドの同じファイル自身だけ
             // GUIDToAssetPath は削除済みアセットのパスを返すことがあるので実在確認する
             var existing = AssetDatabase.GUIDToAssetPath(guid);
             if (!string.IsNullOrEmpty(existing)
                 && (File.Exists(existing) || Directory.Exists(existing))
-                && MetaGuidEmitter.TryRelative(outFolder, existing) == null)
+                && !PathComparer.Equals(Path.GetFullPath(existing), Path.GetFullPath(assetPath)))
             {
                 result.Diagnostics.Add(new Diagnostic
                 {
@@ -386,30 +402,24 @@ namespace Narazaka.Unity.LilToonShaderMerger
             foreach (var p in parsed)
             {
                 if (!Directory.Exists(p.FolderPath)) continue;
+                var folderFull = Path.GetFullPath(p.FolderPath);
 
-                void Copy(string name, string src)
+                // ソースフォルダ基準の正規化相対パス。フォルダ外 ("../x.hlsl" や絶対パス) は null
+                string Rel(string path) => MetaGuidEmitter.TryRelative(folderFull, Path.GetFullPath(path));
+
+                // 返り値: このファイルの include を辿るべきか (採用されたときだけ辿る。負けた側の依存で先勝ちを埋めない)
+                bool Copy(string name, string src)
                 {
                     if (copiedNames.TryGetValue(name, out var prevKey))
                     {
-                        if (prevKey != p.SourceKey)
-                            result.Diagnostics.Add(new Diagnostic
-                            {
-                                Severity = Severity.Warning,
-                                Category = "extra-file",
-                                Message = $"extra file '{name}' name collision between {prevKey} and {p.SourceKey}; using {prevKey} (first wins)"
-                            });
-                        return;
-                    }
-                    // "../x.hlsl" や絶対パスの include は出力フォルダ内に再現できないので警告して飛ばす
-                    if (Path.IsPathRooted(name) || System.Array.IndexOf(name.Split('/', '\\'), "..") >= 0)
-                    {
+                        if (prevKey == p.SourceKey) return false; // 既に辿った
                         result.Diagnostics.Add(new Diagnostic
                         {
                             Severity = Severity.Warning,
                             Category = "extra-file",
-                            Message = $"extra file '{name}' in {p.SourceKey} points outside the output folder; not copied"
+                            Message = $"extra file '{name}' name collision between {prevKey} and {p.SourceKey}; using {prevKey} (first wins)"
                         });
-                        return;
+                        return false;
                     }
                     var dest = Path.Combine(outFolder, name);
                     // outFolder 自身の .meta を書いてはいけない (Relative は outFolder と等しいとき "" を返す)
@@ -417,20 +427,19 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     if (MetaGuidEmitter.Relative(outFolder, destDir) != "") plan.Dir(destDir);
                     plan.Copy(src, dest);
                     copiedNames[name] = p.SourceKey;
+                    return true;
                 }
 
+                // 探索の起点は実際に出力へ流れ込むファイルだけ (正規ファイルと .lilcontainer)。
+                // 未使用の .hlsl から辿ると、その依存が先勝ちを占有して本当に必要な同名ファイルを押し退ける
                 var queue = new Queue<string>();
                 foreach (var f in Directory.GetFiles(p.FolderPath))
                 {
                     var name = Path.GetFileName(f);
                     var ext = Path.GetExtension(f).ToLowerInvariant();
-                    if (ext == ".meta" || ext == ".lilcontainer" || CanonicalFiles.Contains(name))
-                    {
-                        if (ext == ".lilcontainer" || ext == ".hlsl" || ext == ".lilblock") queue.Enqueue(f);
-                        continue;
-                    }
-                    if (copyAll) Copy(name, f);
-                    if (ext == ".hlsl" || ext == ".lilblock") queue.Enqueue(f);
+                    if (ext == ".meta") continue;
+                    if (ext == ".lilcontainer" || CanonicalFiles.Contains(name)) { queue.Enqueue(f); continue; }
+                    if (copyAll && Copy(name, f)) queue.Enqueue(f);
                 }
                 var visited = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
                 while (queue.Count > 0)
@@ -439,13 +448,24 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     if (!visited.Add(file)) continue;
                     foreach (System.Text.RegularExpressions.Match m in IncludeRegex.Matches(File.ReadAllText(file)))
                     {
-                        var name = m.Groups[1].Value;
-                        if (name.StartsWith("Assets/") || name.StartsWith("Packages/")) continue;
-                        if (CanonicalFiles.Contains(name)) continue;
-                        var src = Path.Combine(p.FolderPath, name);
+                        var raw = m.Groups[1].Value;
+                        if (raw.StartsWith("Assets/") || raw.StartsWith("Packages/")) continue;
+                        var src = Path.Combine(p.FolderPath, raw);
                         if (!File.Exists(src)) continue; // lilToon 本体側の include 等
-                        queue.Enqueue(src);
-                        Copy(name, src);
+                        var name = Rel(src);
+                        if (name == null)
+                        {
+                            // 出力フォルダ内に再現できないので警告して飛ばす。その先の include も辿らない
+                            result.Diagnostics.Add(new Diagnostic
+                            {
+                                Severity = Severity.Warning,
+                                Category = "extra-file",
+                                Message = $"extra file '{raw}' in {p.SourceKey} points outside the source folder; not copied"
+                            });
+                            continue;
+                        }
+                        if (CanonicalFiles.Contains(name)) continue;
+                        if (Copy(name, src)) queue.Enqueue(src);
                     }
                 }
             }
