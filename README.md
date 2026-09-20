@@ -28,6 +28,10 @@ https://github.com/Narazaka/liltoon-shader-merger/releases/latest から `net.na
 
 ## Changelog
 
+- 0.4.0-alpha.0:
+  - (breaking): 合成出力の `.meta` GUID の導出元を Merger Settings の `shaderName` から「構成シェーダー名の列（各ソースの ShaderName、`sourceFolders` 順）」に変更。出力名や出力フォルダに関わらず、同じシェーダーの組み合わせなら同じ GUID になり、合成シェーダーを参照するマテリアルを別プロジェクトへ持ち込んでも参照が繋がる。0.2.0 / 0.3.0 で生成した GUID からは再び変わるため、既存マテリアルの参照が一度切れる
+  - (feature): 出力ファイルを先に全て計画し、GUID 衝突（同じ構成を同一プロジェクト内の別フォルダへビルド）や同名出力の二重書き込みがあれば何も書かずに Error で停止する
+  - (fix): extra ファイルのコピーで出力フォルダ自身の `.meta` を上書きしていた問題を修正。`#include` の探索は実際に出力へ流れ込むファイルからのみ行い、ソースフォルダ外を指す include は警告して飛ばす
 - 0.3.0-alpha.0:
   - (fix): 元 Inspector が自クラスを参照するメンバー（例: Uzumore 1.0.20 の `Copy && Convert` メニュー）を含む場合、合成後に未定義型エラーになる問題を修正
   - (feature): ソースの `.hlsl` / `.lilcontainer` / `.lilblock` が `#include` するファイル（`lil_tessellation_cancel.hlsl` 等）を依存関係を辿って常にコピーするようにした
