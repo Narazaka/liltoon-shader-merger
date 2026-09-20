@@ -19,6 +19,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
         readonly string outFolder;
         readonly string guidKey;
         readonly List<(string path, bool track, System.Action write)> steps = new List<(string, bool, System.Action)>();
+        readonly HashSet<string> planned = new HashSet<string>();
 
         public EmitPlan(BuildResult result, string outFolder, string guidKey)
         {
@@ -27,14 +28,29 @@ namespace Narazaka.Unity.LilToonShaderMerger
             this.guidKey = guidKey;
         }
 
+        // 同じ出力パスを 2 回計画するのはソース間の名前衝突の取りこぼし。後勝ちで黙って上書きせず Error にする
+        bool Claim(string assetPath)
+        {
+            if (planned.Add(MetaGuidEmitter.Relative(outFolder, assetPath))) return true;
+            result.Diagnostics.Add(new Diagnostic
+            {
+                Severity = Severity.Error,
+                Category = "output",
+                Message = $"output '{MetaGuidEmitter.Relative(outFolder, assetPath)}' would be written twice"
+            });
+            return false;
+        }
+
         public void Write(string path, string content, string sourceImporterBlock = null)
         {
+            if (!Claim(path)) return;
             steps.Add((path, true, () => File.WriteAllText(path, content)));
             Meta(path, sourceImporterBlock, isFolder: false);
         }
 
         public void Copy(string srcPath, string destPath)
         {
+            if (!Claim(destPath)) return;
             steps.Add((destPath, true, () => File.Copy(srcPath, destPath, true)));
             // For copied files, reuse the source .meta importer block when present (handles unknown extensions and
             // preserves things like ScriptedImporter script refs).
@@ -54,8 +70,10 @@ namespace Narazaka.Unity.LilToonShaderMerger
             Meta(destPath, sourceImporter, isFolder: false);
         }
 
+        // 同じディレクトリは何度呼ばれても 1 回だけ計画する (複数ファイルが同じサブフォルダに入る場合)
         public void Dir(string dirPath)
         {
+            if (!planned.Add(MetaGuidEmitter.Relative(outFolder, dirPath))) return;
             steps.Add((dirPath, false, () => { if (!Directory.Exists(dirPath)) Directory.CreateDirectory(dirPath); }));
             Meta(dirPath, null, isFolder: true);
         }
@@ -380,6 +398,17 @@ namespace Narazaka.Unity.LilToonShaderMerger
                                 Category = "extra-file",
                                 Message = $"extra file '{name}' name collision between {prevKey} and {p.SourceKey}; using {prevKey} (first wins)"
                             });
+                        return;
+                    }
+                    // "../x.hlsl" や絶対パスの include は出力フォルダ内に再現できないので警告して飛ばす
+                    if (Path.IsPathRooted(name) || System.Array.IndexOf(name.Split('/', '\\'), "..") >= 0)
+                    {
+                        result.Diagnostics.Add(new Diagnostic
+                        {
+                            Severity = Severity.Warning,
+                            Category = "extra-file",
+                            Message = $"extra file '{name}' in {p.SourceKey} points outside the output folder; not copied"
+                        });
                         return;
                     }
                     var dest = Path.Combine(outFolder, name);
