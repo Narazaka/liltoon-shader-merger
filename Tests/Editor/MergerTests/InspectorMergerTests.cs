@@ -48,6 +48,21 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         }
 
         [Test]
+        public void Merge_RenamesSelfClassReferencesInExtraMembers()
+        {
+            var a = new ParsedInspector { PatternMatched = true, ClassName="UzumoreInspector" };
+            a.MaterialPropertyFields.Add("_x");
+            a.FindPropertyNames.Add("_x");
+            a.FieldToPropertyName["_x"] = "_x";
+            a.ExtraMembers.Add("private static void Copy()\n{\n    UzumoreInspector inspector = new UzumoreInspector();\n}\n");
+            var diags = new List<Diagnostic>();
+            var code = InspectorMerger.Generate(new[] { ("uzumore", a) }, "MergedInspector", "Merged/X", "lilToon", diags);
+
+            Assert.That(code, Does.Contain("MergedInspector inspector = new MergedInspector();"));
+            Assert.That(code, Does.Not.Contain("UzumoreInspector inspector"));
+        }
+
+        [Test]
         public void Merge_SkipsNonPatternMatched()
         {
             var a = new ParsedInspector { PatternMatched = true, ClassName="A" };

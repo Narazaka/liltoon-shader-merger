@@ -126,7 +126,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                 sb.AppendLine($"        // --- Extra members from {key} ---");
                 foreach (var memberText in ins.ExtraMembers)
                 {
-                    foreach (var rawLine in memberText.Replace("\r\n", "\n").TrimEnd('\n').Split('\n'))
+                    foreach (var rawLine in RenameSelfClass(memberText, ins.ClassName, newClassName).Replace("\r\n", "\n").TrimEnd('\n').Split('\n'))
                     {
                         var trimmed = rawLine.TrimStart();
                         // プリプロセッサディレクティブ (#region/#endregion/#if/#endif/#else/#elif/#pragma 等) は
@@ -156,7 +156,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                 foreach (var siblingText in ins.SiblingTypes)
                 {
                     sb.AppendLine();
-                    foreach (var rawLine in siblingText.Replace("\r\n", "\n").TrimEnd('\n').Split('\n'))
+                    foreach (var rawLine in RenameSelfClass(siblingText, ins.ClassName, newClassName).Replace("\r\n", "\n").TrimEnd('\n').Split('\n'))
                     {
                         var trimmed = rawLine.TrimStart();
                         if (trimmed.StartsWith("#region") || trimmed.StartsWith("#endregion") ||
@@ -172,6 +172,15 @@ namespace Narazaka.Unity.LilToonShaderMerger
             sb.AppendLine("}");
             sb.AppendLine("#endif");
             return sb.ToString();
+        }
+
+        // 元 inspector クラス自身への参照 (例: MenuItem 内の `new UzumoreInspector()`) は
+        // merged class 名に付け替えないと未定義型になる
+        static string RenameSelfClass(string text, string originalClassName, string newClassName)
+        {
+            if (string.IsNullOrEmpty(originalClassName) || originalClassName == newClassName) return text;
+            return System.Text.RegularExpressions.Regex.Replace(
+                text, @"\b" + System.Text.RegularExpressions.Regex.Escape(originalClassName) + @"\b", newClassName);
         }
 
         static string SafeIdent(string s)
