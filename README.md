@@ -33,7 +33,7 @@ https://github.com/Narazaka/liltoon-shader-merger/releases/latest から `net.na
   - (feature): ソースの `.hlsl` / `.lilcontainer` / `.lilblock` が `#include` するファイル（`lil_tessellation_cancel.hlsl` 等）を依存関係を辿って常にコピーするようにした
   - (breaking): `copyExtraFiles` 設定を廃止。代わりに `copyAllExtraFiles`（デフォルト off）を追加。on にすると `#include` されていないファイルもソースフォルダから全てコピーする
 - 0.2.0-alpha.0:
-  - (feature): 合成出力の `.meta` GUID を決定論化（`UUIDv5(ツール固有名前空間, shaderName + 出力相対パス)`）。同じ shaderName・同じ構成なら誰がビルドしても同じ GUID になる。
+  - (feature): 合成出力の `.meta` GUID を決定論化。Merger Settings の `shaderName` と、`outputFolder` から見た各出力ファイルの相対パス（例: `Editor/MergedInspector.cs`）から UUIDv5 で導出する。`shaderName` と出力ファイル構成が同じなら、`outputFolder` の場所やビルドした人によらず同じ GUID になる。
   - (breaking): 既存ビルドのランダム GUID `.meta` は本バージョン以降の Build で決定論値に上書きされる。初回マイグレーション時のみ、その合成シェーダーを参照していたマテリアルの参照が一度切れる。
 - 0.1.0-alpha.0: とりあえずリリース
 
