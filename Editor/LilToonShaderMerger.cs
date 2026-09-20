@@ -70,7 +70,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
             var existing = AssetDatabase.GUIDToAssetPath(guid);
             if (!string.IsNullOrEmpty(existing)
                 && (File.Exists(existing) || Directory.Exists(existing))
-                && !existing.Replace('\\', '/').StartsWith(outFolder.Replace('\\', '/').TrimEnd('/') + "/"))
+                && MetaGuidEmitter.TryRelative(outFolder, existing) == null)
             {
                 result.Diagnostics.Add(new Diagnostic
                 {
@@ -383,9 +383,9 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         return;
                     }
                     var dest = Path.Combine(outFolder, name);
-                    // GetDirectoryName は '\' 区切りを返すので正規化して比較 (outFolder 自身の .meta を書いてはいけない)
-                    var destDir = Path.GetDirectoryName(dest).Replace('\\', '/');
-                    if (destDir != outFolder.Replace('\\', '/').TrimEnd('/')) plan.Dir(destDir);
+                    // outFolder 自身の .meta を書いてはいけない (Relative は outFolder と等しいとき "" を返す)
+                    var destDir = Path.GetDirectoryName(dest);
+                    if (MetaGuidEmitter.Relative(outFolder, destDir) != "") plan.Dir(destDir);
                     plan.Copy(src, dest);
                     copiedNames[name] = p.SourceKey;
                 }

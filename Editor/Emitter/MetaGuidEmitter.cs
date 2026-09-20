@@ -44,14 +44,24 @@ namespace Narazaka.Unity.LilToonShaderMerger
         /// </summary>
         public static string Relative(string root, string full)
         {
+            var rel = TryRelative(root, full);
+            if (rel == null) throw new ArgumentException($"path '{full}' is not under root '{root}'");
+            return rel;
+        }
+
+        /// <summary>
+        /// Same as <see cref="Relative"/> but returns null instead of throwing when
+        /// <paramref name="full"/> is not under <paramref name="root"/>. "" means they are equal.
+        /// </summary>
+        public static string TryRelative(string root, string full)
+        {
             if (root == null) throw new ArgumentNullException(nameof(root));
             if (full == null) throw new ArgumentNullException(nameof(full));
             var r = root.Replace('\\', '/').TrimEnd('/');
             var f = full.Replace('\\', '/');
             if (f == r) return "";
             var prefix = r + "/";
-            if (!f.StartsWith(prefix, StringComparison.Ordinal))
-                throw new ArgumentException($"path '{full}' is not under root '{root}'");
+            if (!f.StartsWith(prefix, StringComparison.Ordinal)) return null;
             return f.Substring(prefix.Length);
         }
 
