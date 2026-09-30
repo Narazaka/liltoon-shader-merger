@@ -15,30 +15,28 @@ namespace Narazaka.Unity.LilToonShaderMerger
         {
             if (sources.Count == 1) return sources[0].text;
 
-            var first = sources[0].text;
-            var firstMatch = HlslIncludeBlock.Match(first);
-            if (!firstMatch.Success) return first;  // HLSLINCLUDE ブロックがない場合は 1 個目を採用
+            // HLSLINCLUDE は Shader 直下と SubShader 内など複数あり得るので、出現順のインデックスで対応付けて merge する
+            var others = new List<MatchCollection>();
+            for (int i = 1; i < sources.Count; i++) others.Add(HlslIncludeBlock.Matches(sources[i].text));
 
-            var mergedHlslLines = new List<string>();
-            var seen = new HashSet<string>();
-            foreach (var ln in firstMatch.Groups[1].Value.Replace("\r\n", "\n").Split('\n'))
+            int blockIndex = 0;
+            return HlslIncludeBlock.Replace(sources[0].text, firstMatch =>
             {
-                var key = ln.Trim();
-                if (seen.Add(key)) mergedHlslLines.Add(ln);
-            }
-            for (int i = 1; i < sources.Count; i++)
-            {
-                var m = HlslIncludeBlock.Match(sources[i].text);
-                if (!m.Success) continue;
-                foreach (var ln in m.Groups[1].Value.Replace("\r\n", "\n").Split('\n'))
+                var idx = blockIndex++;
+                var mergedHlslLines = new List<string>();
+                var seen = new HashSet<string>();
+                void AddLines(Match m)
                 {
-                    var key = ln.Trim();
-                    if (seen.Add(key)) mergedHlslLines.Add(ln);
+                    foreach (var ln in m.Groups[1].Value.Replace("\r\n", "\n").Split('\n'))
+                    {
+                        if (seen.Add(ln.Trim())) mergedHlslLines.Add(ln);
+                    }
                 }
-            }
-
-            var mergedBlock = "HLSLINCLUDE\n" + string.Join("\n", mergedHlslLines) + "\nENDHLSL";
-            return HlslIncludeBlock.Replace(first, mergedBlock);
+                AddLines(firstMatch);
+                foreach (var ms in others)
+                    if (idx < ms.Count) AddLines(ms[idx]);
+                return "HLSLINCLUDE\n" + string.Join("\n", mergedHlslLines) + "\nENDHLSL";
+            });
         }
 
         // ファイル名 union を返す

@@ -50,5 +50,27 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
                 if (ln.Contains("#define LIL_RENDER 0")) count++;
             Assert.That(count, Is.EqualTo(1));
         }
+
+        [Test]
+        public void MergeContainerText_MultipleHlslIncludeBlocks_MergedPerBlock()
+        {
+            const string a = @"Shader ""X""
+{
+    HLSLINCLUDE
+        #include ""custom.hlsl""
+    ENDHLSL
+    SubShader
+    {
+        HLSLINCLUDE
+            #define LIL_TESSELLATION
+        ENDHLSL
+    }
+}";
+            var diags = new List<Diagnostic>();
+            var merged = LilContainerEmitter.MergeContainerText(new[] { ("a", a), ("b", a) }, diags);
+            var subShader = merged.Substring(merged.IndexOf("SubShader"));
+            Assert.That(subShader, Does.Contain("#define LIL_TESSELLATION"));
+            Assert.That(subShader, Does.Not.Contain("custom.hlsl"));
+        }
     }
 }
