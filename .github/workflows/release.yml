@@ -14,11 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Roslyn 統合 DLL を ILRepack でビルド (Microsoft.CodeAnalysis.CSharp を internalize)
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
 
@@ -39,17 +39,11 @@ jobs:
       # 以下は Narazaka/vpm-repos の reusable workflow と同等の処理 (dotnet build を組み込むため inline 化)
       - name: get packageName
         id: packageName
-        uses: notiz-dev/github-action-json-property@7a701887f4b568b23eb7b78bb0fc49aaeb1b68d3
-        with:
-          path: "package.json"
-          prop_path: "name"
+        run: echo "prop=$(jq -r .name package.json)" >> "$GITHUB_OUTPUT"
 
       - name: get version
         id: version
-        uses: notiz-dev/github-action-json-property@7a701887f4b568b23eb7b78bb0fc49aaeb1b68d3
-        with:
-          path: "package.json"
-          prop_path: "version"
+        run: echo "prop=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
 
       - name: Set Environment Variables
         run: |
@@ -79,7 +73,7 @@ jobs:
           done <<< "$EXCLUDE"
 
       - name: Create Zip
-        uses: thedoctor0/zip-release@09336613be18a8208dfa66bd57efafd9e2685657
+        uses: thedoctor0/zip-release@b57d897cb5d60cb78b51a507f63fa184cfe35554
         with:
           type: "zip"
           directory: "."
@@ -87,7 +81,7 @@ jobs:
           exclusions: "*.git*"
 
       - name: Create VPAI latest
-        uses: anatawa12/sh-actions/create-vpai@ab722329dbdc558dd9cc8e7bc89bb61d2df21ba0
+        uses: anatawa12/sh-actions/create-vpai@1d155c7a26bcd0a54ffd9cb38fd66ab0d32d23cd
         with:
           repositories: |
             ${{ env.narazakarepos }}
@@ -95,7 +89,7 @@ jobs:
           output: "${{ env.vpaiLatestFile }}"
 
       - name: Create VPAI latest Zip
-        uses: thedoctor0/zip-release@09336613be18a8208dfa66bd57efafd9e2685657
+        uses: thedoctor0/zip-release@b57d897cb5d60cb78b51a507f63fa184cfe35554
         with:
           type: "zip"
           directory: "."
@@ -103,7 +97,7 @@ jobs:
           filename: ${{ env.vpaiLatestZipFile }}
 
       - name: Create VPAI version
-        uses: anatawa12/sh-actions/create-vpai@ab722329dbdc558dd9cc8e7bc89bb61d2df21ba0
+        uses: anatawa12/sh-actions/create-vpai@1d155c7a26bcd0a54ffd9cb38fd66ab0d32d23cd
         with:
           repositories: |
             ${{ env.narazakarepos }}
@@ -111,7 +105,7 @@ jobs:
           output: "${{ env.vpaiVersionFile }}"
 
       - name: Create VPAI version Zip
-        uses: thedoctor0/zip-release@09336613be18a8208dfa66bd57efafd9e2685657
+        uses: thedoctor0/zip-release@b57d897cb5d60cb78b51a507f63fa184cfe35554
         with:
           type: "zip"
           directory: "."
@@ -119,7 +113,7 @@ jobs:
           filename: ${{ env.vpaiVersionZipFile }}
 
       - name: Make Release
-        uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
         with:
           tag_name: v${{ steps.version.outputs.prop }}
           files: |
