@@ -281,7 +281,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         var fp = Path.Combine(p.FolderPath, fn);
                         if (File.Exists(fp)) srcs.Add((p.SourceKey, File.ReadAllText(fp)));
                     }
-                    var merged = LilContainerEmitter.MergeContainerText(srcs, mergedVariants.Keys, result.Diagnostics);
+                    var merged = LilContainerEmitter.MergeContainerText(fn, srcs, mergedVariants.Keys, result.Diagnostics);
                     plan.Write(Path.Combine(outFolder, fn), merged, lilcontainerImporter);
                 }
 

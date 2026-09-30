@@ -12,30 +12,39 @@ namespace Narazaka.Unity.LilToonShaderMerger
 
         // 同名 .lilcontainer ファイルの内容を merge。
         // customHlslVariants は CollectCustomHlslVariants の結果 (出力フォルダ相対パス)
-        public static string MergeContainerText(IReadOnlyList<(string sourceKey, string text)> sources, ICollection<string> customHlslVariants, List<Diagnostic> diags)
+        public static string MergeContainerText(string fileName, IReadOnlyList<(string sourceKey, string text)> sources, ICollection<string> customHlslVariants, List<Diagnostic> diags)
         {
             if (sources.Count == 1) return sources[0].text;
 
-            // HLSLINCLUDE は Shader 直下と SubShader 内など複数あり得るので、出現順のインデックスで対応付けて merge する
-            var first = HlslIncludeBlock.Matches(sources[0].text);
-            var others = new List<MatchCollection>();
+            // HLSLINCLUDE は Shader 直下と SubShader 内など複数あり得る。ソースごとに SubShader を自前で書くか
+            // lilSubShaderBRP 等に任せるかが違うので、出現順ではなく置かれた位置で対応付けて merge する
+            var firstKeys = BlockKeys(sources[0].text, HlslIncludeBlock.Matches(sources[0].text));
+            var firstKeySet = new HashSet<string>(firstKeys);
+            var others = new List<Dictionary<string, Match>>();
             for (int i = 1; i < sources.Count; i++)
             {
                 var ms = HlslIncludeBlock.Matches(sources[i].text);
-                if (ms.Count != first.Count)
-                    diags.Add(new Diagnostic
-                    {
-                        Severity = Severity.Warning,
-                        Category = "lilcontainer",
-                        Message = $"HLSLINCLUDE block count differs between {sources[0].sourceKey} ({first.Count}) and {sources[i].sourceKey} ({ms.Count}); blocks are matched by order and may be merged into the wrong place"
-                    });
-                others.Add(ms);
+                var keys = BlockKeys(sources[i].text, ms);
+                var byKey = new Dictionary<string, Match>();
+                for (int j = 0; j < ms.Count; j++)
+                {
+                    byKey[keys[j]] = ms[j];
+                    // 出力は先頭ソースの構造を使うので、先頭ソースに無い位置のブロックは捨てられる
+                    if (!firstKeySet.Contains(keys[j]))
+                        diags.Add(new Diagnostic
+                        {
+                            Severity = Severity.Warning,
+                            Category = "lilcontainer",
+                            Message = $"{fileName}: HLSLINCLUDE block at {keys[j]} of {sources[i].sourceKey} has no counterpart in {sources[0].sourceKey} and is dropped"
+                        });
+                }
+                others.Add(byKey);
             }
 
             int blockIndex = 0;
             return HlslIncludeBlock.Replace(sources[0].text, firstMatch =>
             {
-                var idx = blockIndex++;
+                var key = firstKeys[blockIndex++];
                 var mergedHlslLines = new List<string>();
                 var seen = new HashSet<string>();
                 void AddLines(Match m)
@@ -47,8 +56,8 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     }
                 }
                 AddLines(firstMatch);
-                foreach (var ms in others)
-                    if (idx < ms.Count) AddLines(ms[idx]);
+                foreach (var byKey in others)
+                    if (byKey.TryGetValue(key, out var m)) AddLines(m);
 
                 // 派生を使うソースがあれば merge 済み派生が他ソース分も含むので、custom.hlsl を並べて include すると二重定義になる
                 var variants = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
@@ -70,7 +79,60 @@ namespace Narazaka.Unity.LilToonShaderMerger
             });
         }
 
-        static readonly Regex IncludeLine = new Regex(@"^\s*#include\s+""([^""]+)""", RegexOptions.Compiled);
+        // 各 HLSLINCLUDE ブロックの位置を "Shader#0/SubShader#0/HLSLINCLUDE#0" のように、
+        // 囲んでいる { } ブロックのキーワードと同階層での出現順で表す
+        static List<string> BlockKeys(string text, MatchCollection blocks)
+        {
+            var keys = new List<string>();
+            var stack = new List<(string path, Dictionary<string, int> counts)> { ("", new Dictionary<string, int>()) };
+            string Next(string kw)
+            {
+                var top = stack[stack.Count - 1];
+                top.counts.TryGetValue(kw, out var n);
+                top.counts[kw] = n + 1;
+                return top.path + "/" + kw + "#" + n;
+            }
+            int pos = 0;
+            foreach (Match b in blocks)
+            {
+                for (; pos < b.Index; pos++)
+                {
+                    var c = text[pos];
+                    if (c == '/' && pos + 1 < text.Length && text[pos + 1] == '/')
+                    {
+                        var nl = text.IndexOf('\n', pos);
+                        pos = nl < 0 ? text.Length : nl;
+                    }
+                    else if (c == '"')
+                    {
+                        var q = text.IndexOf('"', pos + 1);
+                        pos = q < 0 ? text.Length : q;
+                    }
+                    else if (c == '{') stack.Add((Next(PrecedingKeyword(text, pos)), new Dictionary<string, int>()));
+                    else if (c == '}' && stack.Count > 1) stack.RemoveAt(stack.Count - 1);
+                }
+                keys.Add(Next("HLSLINCLUDE").TrimStart('/'));
+                pos = b.Index + b.Length;
+            }
+            return keys;
+        }
+
+        // `Shader "name" {` / `SubShader {` / `Pass {` の { 直前のキーワード
+        static string PrecedingKeyword(string text, int bracePos)
+        {
+            int i = bracePos - 1;
+            while (i >= 0 && char.IsWhiteSpace(text[i])) i--;
+            if (i > 0 && text[i] == '"')
+            {
+                i = System.Math.Max(text.LastIndexOf('"', i - 1), 0) - 1;
+                while (i >= 0 && char.IsWhiteSpace(text[i])) i--;
+            }
+            int end = i + 1;
+            while (i >= 0 && (char.IsLetterOrDigit(text[i]) || text[i] == '_')) i--;
+            return text.Substring(i + 1, end - (i + 1));
+        }
+
+        static readonly Regex IncludeLine =new Regex(@"^\s*#include\s+""([^""]+)""", RegexOptions.Compiled);
         static readonly Regex ConditionalDirective = new Regex(@"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b", RegexOptions.Compiled);
 
         // Assets/ Packages/ 始まり以外の include (lilToon の importer がソースフォルダ相対に解決するもの) を正規化して返す

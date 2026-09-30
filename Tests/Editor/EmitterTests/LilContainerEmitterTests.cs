@@ -18,7 +18,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
     lilSubShaderInsert ""lilCustomShaderInsert.lilblock""
 }";
             var diags = new List<Diagnostic>();
-            var merged = LilContainerEmitter.MergeContainerText(new[] { ("a", c) }, new string[0], diags);
+            var merged = LilContainerEmitter.MergeContainerText("x.lilcontainer", new[] { ("a", c) }, new string[0], diags);
             Assert.That(merged, Does.Contain("#include \"custom.hlsl\""));
             Assert.That(merged, Does.Contain("lilSubShaderInsert"));
         }
@@ -42,7 +42,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
     ENDHLSL
 }";
             var diags = new List<Diagnostic>();
-            var merged = LilContainerEmitter.MergeContainerText(new[] { ("a", a), ("b", b) }, new string[0], diags);
+            var merged = LilContainerEmitter.MergeContainerText("x.lilcontainer", new[] { ("a", a), ("b", b) }, new string[0], diags);
             Assert.That(merged, Does.Contain("#define LIL_RENDER 0"));
             Assert.That(merged, Does.Contain("#define EXTRA_FROM_B 1"));
             // LIL_RENDER は 1 回だけ
@@ -68,7 +68,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
     }
 }";
             var diags = new List<Diagnostic>();
-            var merged = LilContainerEmitter.MergeContainerText(new[] { ("a", a), ("b", a) }, new string[0], diags);
+            var merged = LilContainerEmitter.MergeContainerText("x.lilcontainer", new[] { ("a", a), ("b", a) }, new string[0], diags);
             var subShader = merged.Substring(merged.IndexOf("SubShader"));
             Assert.That(subShader, Does.Contain("#define LIL_TESSELLATION"));
             Assert.That(subShader, Does.Not.Contain("custom.hlsl"));
@@ -93,7 +93,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
     ENDHLSL
 }";
             var diags = new List<Diagnostic>();
-            var merged = LilContainerEmitter.MergeContainerText(new[] { ("a", a), ("b", b) }, new[] { "custom_fur.hlsl" }, diags);
+            var merged = LilContainerEmitter.MergeContainerText("x.lilcontainer", new[] { ("a", a), ("b", b) }, new[] { "custom_fur.hlsl" }, diags);
             Assert.That(merged, Does.Contain("#include \"custom_fur.hlsl\""));
             Assert.That(merged, Does.Not.Contain("#include \"custom.hlsl\""));
             Assert.That(merged, Does.Contain("#include \"helper.hlsl\""));
@@ -120,31 +120,65 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
     ENDHLSL
 }";
             var diags = new List<Diagnostic>();
-            var merged = LilContainerEmitter.MergeContainerText(new[] { ("a", a), ("b", b) }, new string[0], diags);
+            var merged = LilContainerEmitter.MergeContainerText("x.lilcontainer", new[] { ("a", a), ("b", b) }, new string[0], diags);
             Assert.That(merged.Split(new[] { "#endif" }, System.StringSplitOptions.None).Length - 1, Is.EqualTo(2));
         }
 
         [Test]
-        public void MergeContainerText_BlockCountMismatch_Warns()
+        public void MergeContainerText_BlocksMatchedByPosition()
+        {
+            // もっちりの tess 系 (SubShader 自前) とうずもれ (lilSubShaderBRP 任せ) の組み合わせ
+            const string a = @"Shader ""Hidden/*LIL_SHADER_NAME*/x""
+{
+    HLSLINCLUDE
+        #define A
+    ENDHLSL
+    // lilSubShaderBRP ""DefaultTessellation""
+    SubShader
+    {
+        HLSLINCLUDE
+            #define A2
+        ENDHLSL
+    }
+}";
+            const string b = @"Shader ""Hidden/*LIL_SHADER_NAME*/x""
+{
+    HLSLINCLUDE
+        #define B
+    ENDHLSL
+    lilSubShaderBRP ""DefaultTessellation""
+}";
+            var diags = new List<Diagnostic>();
+            var merged = LilContainerEmitter.MergeContainerText("x.lilcontainer", new[] { ("a", a), ("b", b) }, new string[0], diags);
+            var subShader = merged.Substring(merged.IndexOf("    SubShader"));
+            Assert.That(merged.Substring(0, merged.IndexOf("    SubShader")), Does.Contain("#define B"));
+            Assert.That(subShader, Does.Contain("#define A2"));
+            Assert.That(subShader, Does.Not.Contain("#define B"));
+            Assert.That(diags, Is.Empty);
+        }
+
+        [Test]
+        public void MergeContainerText_BlockWithoutCounterpart_WarnsDropped()
         {
             const string a = @"Shader ""X""
 {
     HLSLINCLUDE
         #define A
     ENDHLSL
-    SubShader { HLSLINCLUDE
-        #define A2
-    ENDHLSL }
 }";
             const string b = @"Shader ""X""
 {
     HLSLINCLUDE
         #define B
     ENDHLSL
+    SubShader { HLSLINCLUDE
+        #define B2
+    ENDHLSL }
 }";
             var diags = new List<Diagnostic>();
-            LilContainerEmitter.MergeContainerText(new[] { ("a", a), ("b", b) }, new string[0], diags);
-            Assert.That(diags.Exists(d => d.Severity == Severity.Warning && d.Message.Contains("block count")));
+            var merged = LilContainerEmitter.MergeContainerText("x.lilcontainer", new[] { ("a", a), ("b", b) }, new string[0], diags);
+            Assert.That(merged, Does.Contain("#define B"));
+            Assert.That(diags.Exists(d => d.Severity == Severity.Warning && d.Message.Contains("Shader#0/SubShader#0/HLSLINCLUDE#0") && d.Message.Contains("dropped")));
         }
 
         [Test]
