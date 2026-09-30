@@ -72,5 +72,31 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             Assert.That(subShader, Does.Contain("#define LIL_TESSELLATION"));
             Assert.That(subShader, Does.Not.Contain("custom.hlsl"));
         }
+
+        [Test]
+        public void MergeContainerText_CustomHlslVariant_ReplacesCustomHlslInclude()
+        {
+            const string a = @"Shader ""X""
+{
+    HLSLINCLUDE
+        #define LIL_RENDER 2
+        #include ""custom_fur.hlsl""
+    ENDHLSL
+}";
+            const string b = @"Shader ""X""
+{
+    HLSLINCLUDE
+        #define LIL_RENDER 2
+        #include ""custom.hlsl""
+        #include ""helper.hlsl""
+    ENDHLSL
+}";
+            var diags = new List<Diagnostic>();
+            var merged = LilContainerEmitter.MergeContainerText(new[] { ("a", a), ("b", b) }, diags);
+            Assert.That(merged, Does.Contain("#include \"custom_fur.hlsl\""));
+            Assert.That(merged, Does.Not.Contain("#include \"custom.hlsl\""));
+            Assert.That(merged, Does.Contain("#include \"helper.hlsl\""));
+            Assert.That(diags, Is.Empty);
+        }
     }
 }

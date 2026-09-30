@@ -173,6 +173,21 @@ namespace Narazaka.Unity.LilToonShaderMerger
             foreach (var p in parsed) hlslSources.Add(p.Hlsl);
             var mergedHlsl = MacroMerger.Merge(hlslSources, s.functionConflict, result.Diagnostics);
 
+            // custom.hlsl の派生 (custom_fur.hlsl 等) は、派生を持つソースはそれを、持たないソースは custom.hlsl を入力に merge する
+            var sourceFolderPaths = new List<string>();
+            foreach (var p in parsed) sourceFolderPaths.Add(p.FolderPath);
+            var mergedVariants = new Dictionary<string, MergedHlsl>(System.StringComparer.OrdinalIgnoreCase);
+            foreach (var name in LilContainerEmitter.CollectCustomHlslVariants(sourceFolderPaths))
+            {
+                var variantSources = new List<CustomHlslData>();
+                foreach (var p in parsed)
+                {
+                    var vp = Path.Combine(p.FolderPath, name);
+                    variantSources.Add(File.Exists(vp) ? CustomHlslParser.Parse(File.ReadAllText(vp)) : p.Hlsl);
+                }
+                mergedVariants[name] = MacroMerger.Merge(variantSources, s.functionConflict, result.Diagnostics);
+            }
+
             var propsSources = new List<(string, CustomProperties)>();
             foreach (var p in parsed) propsSources.Add((p.SourceKey, p.Properties));
             var mergedProps = PropertiesMerger.Merge(propsSources, s.propertyConflict, result.Diagnostics);
@@ -218,6 +233,8 @@ namespace Narazaka.Unity.LilToonShaderMerger
                 var plan = new EmitPlan(result, outFolder, MetaGuidEmitter.GuidKey(sourceKeys));
 
                 plan.Write(Path.Combine(outFolder, "custom.hlsl"), HlslEmitter.EmitCustomHlsl(mergedHlsl));
+                foreach (var kv in mergedVariants)
+                    plan.Write(Path.Combine(outFolder, kv.Key), HlslEmitter.EmitCustomHlsl(kv.Value));
 
                 var insertBodies = new List<(string, string)>();
                 foreach (var p in parsed)
@@ -240,9 +257,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     LilBlockEmitter.EmitInsertBlock(insertBlockSources, s.dedupeIdenticalIncludes));
 
                 // .lilcontainer の union
-                var folderPaths = new List<string>();
-                foreach (var p in parsed) folderPaths.Add(p.FolderPath);
-                var containerFiles = new List<string>(LilContainerEmitter.CollectContainerFiles(folderPaths));
+                var containerFiles = new List<string>(LilContainerEmitter.CollectContainerFiles(sourceFolderPaths));
                 var lilcontainerImporter = LoadLilcontainerImporterBlock(parsed);
                 if (lilcontainerImporter == null && containerFiles.Count > 0)
                 {
@@ -265,7 +280,9 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     plan.Write(Path.Combine(outFolder, fn), merged, lilcontainerImporter);
                 }
 
-                CopyExtraFiles(parsed, outFolder, plan, s.copyAllExtraFiles, result);
+                var generatedFiles = new HashSet<string>(CanonicalFiles, System.StringComparer.OrdinalIgnoreCase);
+                generatedFiles.UnionWith(mergedVariants.Keys);
+                CopyExtraFiles(parsed, outFolder, plan, s.copyAllExtraFiles, generatedFiles, result);
 
                 // Inspector
                 if (mergedInspectorCs != null)
@@ -396,7 +413,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
         // lilToon の container importer は Assets/ Packages/ で始まらない #include にソースフォルダのパスを前置する。
         // そのため .hlsl / .lilcontainer / .lilblock が参照する同フォルダ内ファイルは出力側にも無いとコンパイルできない。
         // copyAll はマクロ経由の include 等、参照追跡で拾えないケースの逃げ道
-        static void CopyExtraFiles(List<ParsedSource> parsed, string outFolder, EmitPlan plan, bool copyAll, BuildResult result)
+        static void CopyExtraFiles(List<ParsedSource> parsed, string outFolder, EmitPlan plan, bool copyAll, ISet<string> generatedFiles, BuildResult result)
         {
             var copiedNames = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase); // name → first sourceKey copied
             foreach (var p in parsed)
@@ -438,7 +455,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     var name = Path.GetFileName(f);
                     var ext = Path.GetExtension(f).ToLowerInvariant();
                     if (ext == ".meta") continue;
-                    if (ext == ".lilcontainer" || CanonicalFiles.Contains(name)) { queue.Enqueue(f); continue; }
+                    if (ext == ".lilcontainer" || generatedFiles.Contains(name)) { queue.Enqueue(f); continue; }
                     if (copyAll && Copy(name, f)) queue.Enqueue(f);
                 }
                 var visited = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
@@ -464,7 +481,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                             });
                             continue;
                         }
-                        if (CanonicalFiles.Contains(name)) continue;
+                        if (generatedFiles.Contains(name)) continue;
                         if (Copy(name, src)) queue.Enqueue(src);
                     }
                 }
