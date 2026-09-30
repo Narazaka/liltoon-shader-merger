@@ -183,7 +183,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                 foreach (var p in parsed)
                 {
                     var vp = Path.Combine(p.FolderPath, name);
-                    variantSources.Add(File.Exists(vp) ? CustomHlslParser.Parse(File.ReadAllText(vp)) : p.Hlsl);
+                    variantSources.Add(File.Exists(vp) ? CustomHlslParser.Parse(ExpandCustomHlslInclude(vp, p.FolderPath)) : p.Hlsl);
                 }
                 mergedVariants[name] = MacroMerger.Merge(variantSources, s.functionConflict, result.Diagnostics);
             }
@@ -234,7 +234,12 @@ namespace Narazaka.Unity.LilToonShaderMerger
 
                 plan.Write(Path.Combine(outFolder, "custom.hlsl"), HlslEmitter.EmitCustomHlsl(mergedHlsl));
                 foreach (var kv in mergedVariants)
-                    plan.Write(Path.Combine(outFolder, kv.Key), HlslEmitter.EmitCustomHlsl(kv.Value));
+                {
+                    var dest = Path.Combine(outFolder, kv.Key);
+                    var destDir = Path.GetDirectoryName(dest);
+                    if (MetaGuidEmitter.Relative(outFolder, destDir) != "") plan.Dir(destDir);
+                    plan.Write(dest, HlslEmitter.EmitCustomHlsl(kv.Value));
+                }
 
                 var insertBodies = new List<(string, string)>();
                 foreach (var p in parsed)
@@ -276,7 +281,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         var fp = Path.Combine(p.FolderPath, fn);
                         if (File.Exists(fp)) srcs.Add((p.SourceKey, File.ReadAllText(fp)));
                     }
-                    var merged = LilContainerEmitter.MergeContainerText(srcs, result.Diagnostics);
+                    var merged = LilContainerEmitter.MergeContainerText(srcs, mergedVariants.Keys, result.Diagnostics);
                     plan.Write(Path.Combine(outFolder, fn), merged, lilcontainerImporter);
                 }
 
@@ -486,6 +491,22 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     }
                 }
             }
+        }
+
+        // custom.hlsl を include して差分だけ書く派生もあるので、同フォルダの custom.hlsl は展開してから解析する
+        static readonly System.Text.RegularExpressions.Regex CustomHlslIncludeLine =
+            new System.Text.RegularExpressions.Regex(@"^[\t ]*#include\s+""(?:\./)*custom\.hlsl""[\t ]*$",
+                System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        public static string ExpandCustomHlslInclude(string variantPath, string folder)
+        {
+            var text = File.ReadAllText(variantPath).Replace("\r\n", "\n");
+            // include はファイル相対なので、サブフォルダの派生が指す custom.hlsl はソースの custom.hlsl ではない
+            var custom = Path.GetFullPath(Path.Combine(folder, "custom.hlsl"));
+            var resolved = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(variantPath), "custom.hlsl"));
+            if (resolved != custom || !File.Exists(custom)) return text;
+            var customText = File.ReadAllText(custom).Replace("\r\n", "\n");
+            return CustomHlslIncludeLine.Replace(text, _ => customText);
         }
 
         static bool HasErrors(List<Diagnostic> diags)

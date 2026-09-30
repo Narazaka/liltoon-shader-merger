@@ -16,6 +16,10 @@ namespace Narazaka.Unity.LilToonShaderMerger
             @"^(?<indent>[\t ]*)#define\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)(?:\s+(?<value>[^\\]*?))?\s*$",
             RegexOptions.Compiled);
 
+        static readonly Regex Undef = new Regex(
+            @"^[\t ]*#undef\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)",
+            RegexOptions.Compiled);
+
         // フラグ系 (本体なし) の lilToon 公式パターン名 (これらは FlagMacros として記録)
         static readonly Regex FlagDefineName = new Regex(
             @"^(?:LIL_REQUIRE_APP_[A-Z0-9_]+|LIL_V2F_FORCE_[A-Z0-9_]+|LIL_CUSTOM_VERT_COPY)$",
@@ -52,6 +56,17 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         if (!hasContinuation) break;
                     }
                     data.MultilineMacros[name] = body;
+                    continue;
+                }
+
+                // 派生 hlsl が custom.hlsl を include した後に #undef で差し替えるケース
+                var u = Undef.Match(line);
+                if (u.Success)
+                {
+                    var name = u.Groups["name"].Value;
+                    data.MultilineMacros.Remove(name);
+                    data.ExtraDefines.Remove(name);
+                    data.FlagMacros.Remove(name);
                     continue;
                 }
 
