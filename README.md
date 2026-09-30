@@ -28,6 +28,11 @@ https://github.com/Narazaka/liltoon-shader-merger/releases/latest から `net.na
 
 ## Changelog
 
+- 0.4.0-alpha.1:
+  - (fix): `HLSLINCLUDE` ブロックを複数持つ `.lilcontainer`（Shader 直下と SubShader 内に持つ tess 系など）で、すべてのブロックが 1 つ目の内容で上書きされていた問題を修正。SubShader 側の `#define LIL_TESSELLATION` などが消え、`undeclared identifier '_TessEdge'` などのエラーになっていた
+  - (fix): もっちりシェーダーの `custom_fur.hlsl` のように、`.lilcontainer` が `custom.hlsl` の代わりに include する派生ファイルを、他ソースの `custom.hlsl` と合成して出力するようにした。これまでは派生ファイルと合成済みの `custom.hlsl` が両方 include され、Fur 系で `invalid subscript 'uv23'` などのエラーになっていた。派生ファイルが `custom.hlsl` を include し、`#undef` で一部を差し替える形にも対応
+  - (fix): `HLSLINCLUDE` の合成時に `#if` / `#endif` などの条件ディレクティブまで重複除去され、2 つ目以降のソースで条件分岐の対応が崩れる問題を修正
+  - (feature): ソース間で `HLSLINCLUDE` ブロックの数が異なる場合と、1 つのブロックで複数の派生ファイルが include される場合に Warning を出すようにした
 - 0.4.0-alpha.0:
   - (breaking): 合成出力の `.meta` GUID の導出元を Merger Settings の `shaderName` から「構成シェーダー名の列（各ソースの ShaderName、`sourceFolders` 順）」に変更。出力名や出力フォルダに関わらず、同じシェーダーの組み合わせなら同じ GUID になり、合成シェーダーを参照するマテリアルを別プロジェクトへ持ち込んでも参照が繋がる。0.2.0 / 0.3.0 で生成した GUID からは再び変わるため、既存マテリアルの参照が一度切れる
   - (feature): 出力ファイルを先に全て計画し、GUID 衝突（同じ構成を同一プロジェクト内の別フォルダへビルド）や同名出力の二重書き込みがあれば何も書かずに Error で停止する
