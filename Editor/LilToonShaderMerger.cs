@@ -214,6 +214,20 @@ namespace Narazaka.Unity.LilToonShaderMerger
                 mergedInspectorCs = InspectorMerger.Generate(inspectorSources, className, s.shaderName, "lilToon", result.Diagnostics);
             }
 
+            // .lilcontainer の union (構造の衝突を DryRun でも検出できるよう Emit 前に合成する)
+            var mergedContainers = new SortedDictionary<string, string>(System.StringComparer.Ordinal);
+            foreach (var fn in LilContainerEmitter.CollectContainerFiles(sourceFolderPaths))
+            {
+                var srcs = new List<(string, string)>();
+                foreach (var p in parsed)
+                {
+                    var fp = Path.Combine(p.FolderPath, fn);
+                    if (File.Exists(fp)) srcs.Add((p.SourceKey, File.ReadAllText(fp)));
+                }
+                var merged = LilContainerEmitter.MergeContainerText(fn, srcs, mergedVariants.Keys, result.Diagnostics);
+                if (merged != null) mergedContainers[fn] = merged;
+            }
+
             if (HasErrors(result.Diagnostics)) return result;
             if (!emit) { result.Success = true; return result; }
 
@@ -261,10 +275,8 @@ namespace Narazaka.Unity.LilToonShaderMerger
                 plan.Write(Path.Combine(outFolder, "lilCustomShaderInsert.lilblock"),
                     LilBlockEmitter.EmitInsertBlock(insertBlockSources, s.dedupeIdenticalIncludes));
 
-                // .lilcontainer の union
-                var containerFiles = new List<string>(LilContainerEmitter.CollectContainerFiles(sourceFolderPaths));
                 var lilcontainerImporter = LoadLilcontainerImporterBlock(parsed);
-                if (lilcontainerImporter == null && containerFiles.Count > 0)
+                if (lilcontainerImporter == null && mergedContainers.Count > 0)
                 {
                     result.Diagnostics.Add(new Diagnostic
                     {
@@ -273,17 +285,8 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         Message = "no source .lilcontainer.meta found to derive ScriptedImporter block; emitting DefaultImporter as fallback. Unity will rewrite the importer body on Refresh but our deterministic guid is preserved."
                     });
                 }
-                foreach (var fn in containerFiles)
-                {
-                    var srcs = new List<(string, string)>();
-                    foreach (var p in parsed)
-                    {
-                        var fp = Path.Combine(p.FolderPath, fn);
-                        if (File.Exists(fp)) srcs.Add((p.SourceKey, File.ReadAllText(fp)));
-                    }
-                    var merged = LilContainerEmitter.MergeContainerText(fn, srcs, mergedVariants.Keys, result.Diagnostics);
-                    plan.Write(Path.Combine(outFolder, fn), merged, lilcontainerImporter);
-                }
+                foreach (var kv in mergedContainers)
+                    plan.Write(Path.Combine(outFolder, kv.Key), kv.Value, lilcontainerImporter);
 
                 var generatedFiles = new HashSet<string>(CanonicalFiles, System.StringComparer.OrdinalIgnoreCase);
                 generatedFiles.UnionWith(mergedVariants.Keys);

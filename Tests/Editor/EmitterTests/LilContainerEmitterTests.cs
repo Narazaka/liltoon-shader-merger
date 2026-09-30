@@ -148,37 +148,78 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
     ENDHLSL
     lilSubShaderBRP ""DefaultTessellation""
 }";
-            var diags = new List<Diagnostic>();
-            var merged = LilContainerEmitter.MergeContainerText("x.lilcontainer", new[] { ("a", a), ("b", b) }, new string[0], diags);
-            var subShader = merged.Substring(merged.IndexOf("    SubShader"));
-            Assert.That(merged.Substring(0, merged.IndexOf("    SubShader")), Does.Contain("#define B"));
-            Assert.That(subShader, Does.Contain("#define A2"));
-            Assert.That(subShader, Does.Not.Contain("#define B"));
-            Assert.That(diags, Is.Empty);
+            var template = new[] { LilContainerEmitter.StructureHash(b) };
+            // 書き換えた側 (a) がどの順番でも土台になる
+            foreach (var sources in new[] { new[] { ("a", a), ("b", b) }, new[] { ("b", b), ("a", a) } })
+            {
+                var diags = new List<Diagnostic>();
+                var merged = LilContainerEmitter.MergeContainerText("x.lilcontainer", sources, new string[0], template, diags);
+                var subShader = merged.Substring(merged.IndexOf("    SubShader"));
+                Assert.That(merged.Substring(0, merged.IndexOf("    SubShader")), Does.Contain("#define B"));
+                Assert.That(subShader, Does.Contain("#define A2"));
+                Assert.That(subShader, Does.Not.Contain("#define B"));
+                Assert.That(merged, Does.Not.Contain("\n    lilSubShaderBRP"));
+                Assert.That(diags, Is.Empty);
+            }
         }
 
         [Test]
-        public void MergeContainerText_BlockWithoutCounterpart_WarnsDropped()
+        public void MergeContainerText_DifferentCustomizations_Error()
         {
+            const string template = @"Shader ""X""
+{
+    HLSLINCLUDE
+    ENDHLSL
+    lilSubShaderBRP ""Default""
+}";
             const string a = @"Shader ""X""
 {
     HLSLINCLUDE
-        #define A
     ENDHLSL
+    lilSubShaderBRP ""DefaultUsePass""
 }";
             const string b = @"Shader ""X""
 {
     HLSLINCLUDE
-        #define B
     ENDHLSL
+    SubShader { }
+}";
+            var diags = new List<Diagnostic>();
+            var merged = LilContainerEmitter.MergeContainerText("x.lilcontainer", new[] { ("t", template), ("a", a), ("b", b) }, new string[0],
+                new[] { LilContainerEmitter.StructureHash(template) }, diags);
+            Assert.That(merged, Is.Null);
+            Assert.That(diags.Exists(d => d.Severity == Severity.Error && d.Message.Contains("[a]") && d.Message.Contains("[b]")));
+        }
+
+        [Test]
+        public void StructureHash_IgnoresCommentsWhitespaceAndHlslIncludeBody()
+        {
+            const string a = "Shader \"X\"\n{\n    HLSLINCLUDE\n        #define A\n    ENDHLSL\n    lilSubShaderBRP \"Default\"\n}";
+            const string b = "Shader  \"X\"\r\n{\r\n\r\n    // memo\r\n    HLSLINCLUDE\r\n    ENDHLSL\r\n\tlilSubShaderBRP \"Default\" // memo\r\n}";
+            Assert.That(LilContainerEmitter.StructureHash(b), Is.EqualTo(LilContainerEmitter.StructureHash(a)));
+        }
+
+        [Test]
+        public void MergeContainerText_BlockWithoutPlaceInBase_Error()
+        {
+            const string template = @"Shader ""X""
+{
+    HLSLINCLUDE
+        #define T
+    ENDHLSL
+}";
+            // Shader 直下の HLSLINCLUDE を持たない書き換え
+            const string custom = @"Shader ""X""
+{
     SubShader { HLSLINCLUDE
-        #define B2
+        #define C
     ENDHLSL }
 }";
             var diags = new List<Diagnostic>();
-            var merged = LilContainerEmitter.MergeContainerText("x.lilcontainer", new[] { ("a", a), ("b", b) }, new string[0], diags);
-            Assert.That(merged, Does.Contain("#define B"));
-            Assert.That(diags.Exists(d => d.Severity == Severity.Warning && d.Message.Contains("Shader#0/SubShader#0/HLSLINCLUDE#0") && d.Message.Contains("dropped")));
+            var merged = LilContainerEmitter.MergeContainerText("x.lilcontainer", new[] { ("t", template), ("c", custom) }, new string[0],
+                new[] { LilContainerEmitter.StructureHash(template) }, diags);
+            Assert.That(merged, Is.Null);
+            Assert.That(diags.Exists(d => d.Severity == Severity.Error && d.Message.Contains("Shader#0/HLSLINCLUDE#0")));
         }
 
         [Test]
