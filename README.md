@@ -28,6 +28,10 @@ https://github.com/Narazaka/liltoon-shader-merger/releases/latest から `net.na
 
 ## Changelog
 
+- 0.4.0-alpha.2:
+  - (feature): `.lilcontainer` の構造（`HLSLINCLUDE` 以外の `lilSubShaderBRP` 等の指定や自前の `SubShader`）を lilToon のカスタムシェーダーテンプレートと照合し、テンプレートから書き換えたソースの構造を `sourceFolders` の順番に関係なく土台にするようにした。これまでは常に先頭ソースの構造が使われ、後ろのソースの書き換え（もっちりシェーダーの tess 系の自前 SubShader など）が黙って捨てられていた
+  - (feature): 同じ `.lilcontainer` を複数のソースが別々に書き換えている場合と、あるソースの `HLSLINCLUDE` を合成後の構造に置けない場合は、Error で停止するようにした。DryRun でも検出される
+  - (fix): `HLSLINCLUDE` ブロックを出現順ではなく、どの Shader / SubShader / Pass の中にあるかで対応付けるようにした。SubShader を自前で書くソースとそうでないソースの組み合わせで、ブロック数の違いによる誤った警告が出ていた
 - 0.4.0-alpha.1:
   - (fix): `HLSLINCLUDE` ブロックを複数持つ `.lilcontainer`（Shader 直下と SubShader 内に持つ tess 系など）で、すべてのブロックが 1 つ目の内容で上書きされていた問題を修正。SubShader 側の `#define LIL_TESSELLATION` などが消え、`undeclared identifier '_TessEdge'` などのエラーになっていた
   - (fix): もっちりシェーダーの `custom_fur.hlsl` のように、`.lilcontainer` が `custom.hlsl` の代わりに include する派生ファイルを、他ソースの `custom.hlsl` と合成して出力するようにした。これまでは派生ファイルと合成済みの `custom.hlsl` が両方 include され、Fur 系で `invalid subscript 'uv23'` などのエラーになっていた。派生ファイルが `custom.hlsl` を include し、`#undef` で一部を差し替える形にも対応
