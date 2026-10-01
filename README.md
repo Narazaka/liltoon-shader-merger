@@ -28,6 +28,9 @@ https://github.com/Narazaka/liltoon-shader-merger/releases/latest から `net.na
 
 ## Changelog
 
+- 0.4.0-alpha.4:
+  - (feature): 合成するソースの一部が用意していないシェーダーの種類（例: HawaseGimmickShader に無い Lite / Multi / FakeShadow）を、Build と DryRun で `[NOT PROVIDED BY <ソース>]` として、`Lite/Cutout` や `[Optional] FakeShadow` のような種類名で一覧表示するようにした。出力は従来どおり全ソースの種類の和集合で、それらの種類にもそのソースのコードが入る（動くこともあるが作者の想定外）
+  - (feature): Verify Compile で、ソースが用意していない種類で出たメッセージを `[NOT PROVIDED BY <ソース>]` に分類し、合成処理が原因の `[CAUSED BY MERGE]` と区別するようにした
 - 0.4.0-alpha.3:
   - (fix): `custom.hlsl` の `#define` 以外の内容（`#if` などの条件分岐、引数付きマクロ、`#undef`、関数定義や `#include`）が合成時に黙って捨てられていた問題を修正。条件分岐はそのまま保持して出力する。たとえば msdfmask の `#if !defined(LIL_LITE)` 内の定義が、これまでは Lite 版にも無条件で入っていた
   - (feature): `BEFORE_*` などの連結型マクロを条件付きで定義しているソースがあっても、ソースごとの補助マクロに分けて元の条件のまま連結するようにした
