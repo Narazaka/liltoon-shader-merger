@@ -2,14 +2,56 @@ using System.Collections.Generic;
 
 namespace Narazaka.Unity.LilToonShaderMerger
 {
+    // custom.hlsl をプリプロセッサ指示の並びとして保持する。#if 等の条件は各要素の Conditions に残す
     public class CustomHlslData
     {
-        // マクロ名 → 本体行 (連続)。 例: "LIL_CUSTOM_PROPERTIES" → ["float _effect;", "float _strength;", ...]
-        public Dictionary<string, List<string>> MultilineMacros { get; } = new Dictionary<string, List<string>>();
-        // フラグ系マクロ (本体なし)。 例: "LIL_REQUIRE_APP_POSITION"
-        public HashSet<string> FlagMacros { get; } = new HashSet<string>();
-        // ソース固有のシンプル #define (例: "K2S_DCS_VMATRIXTEXTURERESOLUTION" → "4", "LIL_FEATURE_DECAL" → "")
-        public Dictionary<string, string> ExtraDefines { get; } = new Dictionary<string, string>();
+        public List<HlslEntry> Entries { get; } = new List<HlslEntry>();
+
+        // 最後に有効な #define (条件付きも含む)。テスト・診断用
+        public HlslEntry FindDefine(string name) =>
+            Entries.FindLast(e => e.Kind == HlslEntryKind.Define && e.Name == name);
+    }
+
+    public enum HlslEntryKind { Define, Undef, Other }
+
+    public class HlslEntry
+    {
+        public HlslEntryKind Kind { get; set; }
+        // Define / Undef のマクロ名
+        public string Name { get; set; }
+        // 関数形式マクロの引数部 (例: "(id0,id1)")。オブジェクト形式は null
+        public string Params { get; set; }
+        // Define: 本体行 (行継続の \ は除去済み)。Other: 原文の行
+        public List<string> Body { get; set; } = new List<string>();
+        // 外側から順の条件フレーム。各フレームはその時点までの分岐見出し (例: ["#if A", "#else"]) で、最後の見出しが有効な分岐
+        public List<List<string>> Conditions { get; set; } = new List<List<string>>();
+
+        public HlslEntry Clone(string name = null) => new HlslEntry
+        {
+            Kind = Kind,
+            Name = name ?? Name,
+            Params = Params,
+            Body = new List<string>(Body),
+            Conditions = Conditions.ConvertAll(f => new List<string>(f)),
+        };
+
+        public bool SameAs(HlslEntry o) =>
+            Kind == o.Kind && Name == o.Name && Params == o.Params && SameLines(Body, o.Body) && SameConditions(o);
+
+        public bool SameConditions(HlslEntry o)
+        {
+            if (Conditions.Count != o.Conditions.Count) return false;
+            for (int i = 0; i < Conditions.Count; i++)
+                if (!SameLines(Conditions[i], o.Conditions[i])) return false;
+            return true;
+        }
+
+        static bool SameLines(List<string> a, List<string> b)
+        {
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++) if (a[i] != b[i]) return false;
+            return true;
+        }
     }
 
     public class CustomShaderDatas

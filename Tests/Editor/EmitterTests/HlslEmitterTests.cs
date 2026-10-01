@@ -9,9 +9,9 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         public void EmitCustomHlsl_RendersMultilineAndFlagMacros()
         {
             var m = new MergedHlsl();
-            m.MultilineMacros["LIL_CUSTOM_PROPERTIES"] = new List<string> { "float _a;", "float _b;" };
-            m.FlagMacros.Add("LIL_REQUIRE_APP_POSITION");
-            m.FlagMacros.Add("LIL_REQUIRE_APP_NORMAL");
+            m.Entries.Add(new HlslEntry { Kind = HlslEntryKind.Define, Name = "LIL_CUSTOM_PROPERTIES", Body = new List<string> { "float _a;", "float _b;" } });
+            m.Entries.Add(new HlslEntry { Kind = HlslEntryKind.Define, Name = "LIL_REQUIRE_APP_POSITION" });
+            m.Entries.Add(new HlslEntry { Kind = HlslEntryKind.Define, Name = "LIL_REQUIRE_APP_NORMAL" });
 
             var txt = HlslEmitter.EmitCustomHlsl(m);
 

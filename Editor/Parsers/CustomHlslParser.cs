@@ -5,90 +5,118 @@ namespace Narazaka.Unity.LilToonShaderMerger
 {
     public static class CustomHlslParser
     {
-        // 行頭 (空白許容) で // 始まりでない `#define <NAME> \` (multi-line macro head)
-        // NAME パターンを限定せず任意の C 識別子を許容 (ソース固有 helper macro も拾う)
-        static readonly Regex MultilineHead = new Regex(
-            @"^(?<indent>[\t ]*)#define\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s+\\\s*$",
+        static readonly Regex Directive = new Regex(@"^#\s*(?<kw>[A-Za-z_]+)\b\s*(?<rest>.*)$", RegexOptions.Compiled);
+
+        // `NAME`, `NAME value`, `NAME(params) value` (引数部は名前の直後に空白なしで続く)
+        static readonly Regex DefineHead = new Regex(
+            @"^(?<name>[A-Za-z_][A-Za-z0-9_]*)(?<params>\([^)]*\))?\s*(?<value>.*)$",
             RegexOptions.Compiled);
 
-        // 単一行 #define: `#define NAME` (body なし) or `#define NAME VALUE` (body あり、 1 行で完結)
-        static readonly Regex SingleLineDefine = new Regex(
-            @"^(?<indent>[\t ]*)#define\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)(?:\s+(?<value>[^\\]*?))?\s*$",
-            RegexOptions.Compiled);
-
-        static readonly Regex Undef = new Regex(
-            @"^[\t ]*#undef\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)",
-            RegexOptions.Compiled);
-
-        // フラグ系 (本体なし) の lilToon 公式パターン名 (これらは FlagMacros として記録)
-        static readonly Regex FlagDefineName = new Regex(
-            @"^(?:LIL_REQUIRE_APP_[A-Z0-9_]+|LIL_V2F_FORCE_[A-Z0-9_]+|LIL_CUSTOM_VERT_COPY)$",
-            RegexOptions.Compiled);
+        static readonly Regex UndefHead = new Regex(@"^(?<name>[A-Za-z_][A-Za-z0-9_]*)", RegexOptions.Compiled);
 
         public static CustomHlslData Parse(string source)
         {
             var data = new CustomHlslData();
             var lines = source.Replace("\r\n", "\n").Split('\n');
+            var conditions = new List<List<string>>();
+            bool inBlockComment = false;
+
+            HlslEntry New(HlslEntryKind kind, string name = null) => new HlslEntry
+            {
+                Kind = kind,
+                Name = name,
+                Conditions = conditions.ConvertAll(f => new List<string>(f)),
+            };
 
             for (int i = 0; i < lines.Length; i++)
             {
-                var line = lines[i];
-                // コメント行を除外 ( // が行頭にあれば無視。 ブロックコメント /* */ は v1 未対応)
-                var trimmed = line.TrimStart();
-                if (trimmed.StartsWith("//")) continue;
-
-                var m = MultilineHead.Match(line);
-                if (m.Success)
+                var trimmed = lines[i].Trim();
+                if (inBlockComment)
                 {
-                    var name = m.Groups["name"].Value;
-                    var body = new List<string>();
-                    i++;
-                    for (; i < lines.Length; i++)
-                    {
-                        var bodyLine = lines[i];
-                        var bodyTrim = bodyLine.Trim();
-                        if (bodyTrim.TrimStart().StartsWith("//")) continue;
-                        bool hasContinuation = bodyTrim.EndsWith("\\");
-                        var content = hasContinuation
-                            ? bodyTrim.Substring(0, bodyTrim.Length - 1).Trim()
-                            : bodyTrim;
-                        if (!string.IsNullOrEmpty(content)) body.Add(content);
-                        if (!hasContinuation) break;
-                    }
-                    data.MultilineMacros[name] = body;
+                    if (trimmed.Contains("*/")) inBlockComment = false;
+                    continue;
+                }
+                if (trimmed.Length == 0 || trimmed.StartsWith("//")) continue;
+                if (trimmed.StartsWith("/*"))
+                {
+                    if (!trimmed.Contains("*/")) inBlockComment = true;
                     continue;
                 }
 
-                // 派生 hlsl が custom.hlsl を include した後に #undef で差し替えるケース
-                var u = Undef.Match(line);
-                if (u.Success)
+                var d = Directive.Match(trimmed);
+                if (!d.Success)
                 {
-                    var name = u.Groups["name"].Value;
-                    data.MultilineMacros.Remove(name);
-                    data.ExtraDefines.Remove(name);
-                    data.FlagMacros.Remove(name);
+                    // #define の外にある HLSL コード (関数定義等)。行単位でそのまま保持する
+                    var other = New(HlslEntryKind.Other);
+                    other.Body.Add(lines[i].TrimEnd());
+                    data.Entries.Add(other);
                     continue;
                 }
 
-                var s = SingleLineDefine.Match(line);
-                if (s.Success)
+                var kw = d.Groups["kw"].Value;
+                var rest = d.Groups["rest"].Value;
+                switch (kw)
                 {
-                    var name = s.Groups["name"].Value;
-                    var value = s.Groups["value"].Value ?? "";
-                    if (FlagDefineName.IsMatch(name))
+                    case "if":
+                    case "ifdef":
+                    case "ifndef":
+                        conditions.Add(new List<string> { trimmed });
+                        break;
+                    case "elif":
+                    case "else":
+                        if (conditions.Count > 0) conditions[conditions.Count - 1].Add(trimmed);
+                        break;
+                    case "endif":
+                        if (conditions.Count > 0) conditions.RemoveAt(conditions.Count - 1);
+                        break;
+                    case "define":
                     {
-                        // lilToon 公式フラグマクロ
-                        data.FlagMacros.Add(name);
+                        var h = DefineHead.Match(StripContinuation(rest, out var continues));
+                        if (!h.Success) break;
+                        var def = New(HlslEntryKind.Define, h.Groups["name"].Value);
+                        if (h.Groups["params"].Success) def.Params = h.Groups["params"].Value;
+                        var value = h.Groups["value"].Value.Trim();
+                        if (value.Length > 0) def.Body.Add(value);
+                        while (continues && i + 1 < lines.Length)
+                        {
+                            i++;
+                            var bodyLine = lines[i].Trim();
+                            var content = StripContinuation(bodyLine, out continues).Trim();
+                            if (content.StartsWith("//")) continue;
+                            if (content.Length > 0) def.Body.Add(content);
+                        }
+                        data.Entries.Add(def);
+                        break;
                     }
-                    else
+                    case "undef":
                     {
-                        // ソース固有 #define (constant, FLAG, etc.)
-                        data.ExtraDefines[name] = value.TrimEnd();
+                        var h = UndefHead.Match(rest);
+                        if (h.Success) data.Entries.Add(New(HlslEntryKind.Undef, h.Groups["name"].Value));
+                        break;
+                    }
+                    default:
+                    {
+                        // #include / #pragma 等。行継続も含めてそのまま保持する
+                        var other = New(HlslEntryKind.Other);
+                        other.Body.Add(lines[i].TrimEnd());
+                        while (lines[i].TrimEnd().EndsWith("\\") && i + 1 < lines.Length)
+                        {
+                            i++;
+                            other.Body.Add(lines[i].TrimEnd());
+                        }
+                        data.Entries.Add(other);
+                        break;
                     }
                 }
             }
-
             return data;
+        }
+
+        static string StripContinuation(string line, out bool continues)
+        {
+            var t = line.TrimEnd();
+            continues = t.EndsWith("\\");
+            return continues ? t.Substring(0, t.Length - 1) : t;
         }
     }
 }

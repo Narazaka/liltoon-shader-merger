@@ -250,9 +250,9 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
                 File.WriteAllText(Path.Combine(dir, "custom.hlsl"), "#define BEFORE_OUTPUT \\\n    fd.col *= input.uv23.x;\n#define KEEP 1\n");
                 var variant = Path.Combine(dir, "custom_fur.hlsl");
                 File.WriteAllText(variant, "#include \"custom.hlsl\"\n#undef BEFORE_OUTPUT\n");
-                var d = CustomHlslParser.Parse(LilToonShaderMerger.ExpandCustomHlslInclude(variant, dir));
-                Assert.That(d.MultilineMacros.ContainsKey("BEFORE_OUTPUT"), Is.False);
-                Assert.That(d.ExtraDefines["KEEP"], Is.EqualTo("1"));
+                var d = MacroMerger.Merge(new[] { ("a", CustomHlslParser.Parse(LilToonShaderMerger.ExpandCustomHlslInclude(variant, dir))) }, ConflictStrategy.ErrorOut, new List<Diagnostic>());
+                Assert.That(d.FindDefine("BEFORE_OUTPUT"), Is.Null);
+                CollectionAssert.AreEqual(new[] { "1" }, d.FindDefine("KEEP").Body);
             }
             finally { Directory.Delete(dir, true); }
         }

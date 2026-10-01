@@ -12,7 +12,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         const string OutRoot = "Assets/_batch_merge_tests";
 
         // プロジェクト内の全カスタムシェーダー
-        static readonly (string label, string folder)[] AllShaders = new[]
+        internal static readonly (string label, string folder)[] AllShaders = new[]
         {
             ("motchiri",                  "Assets/motchiri_shader/Shader/Shaders"),
             ("uzumore",                   "Packages/jp.sigmal00.uzumore-shader/Runtime/Shaders"),

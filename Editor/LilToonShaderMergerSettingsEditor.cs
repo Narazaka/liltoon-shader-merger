@@ -34,9 +34,30 @@ namespace Narazaka.Unity.LilToonShaderMerger
                     ReportResult(result);
                 }
             }
+            if (GUILayout.Button(new GUIContent("Verify Compile", "Build 済みの出力シェーダーを実際にコンパイルして検証する (時間がかかる)")))
+            {
+                var result = LilToonShaderMerger.VerifyCompile(s);
+                LogDiagnostics(result);
+                int mergeErrors = 0, mergeWarnings = 0, preExisting = 0, other = 0;
+                foreach (var d in result.Diagnostics)
+                {
+                    if (d.Category == ShaderCompileVerifier.MergeCausedCategory)
+                    {
+                        if (d.Severity == Severity.Error) mergeErrors++;
+                        else mergeWarnings++;
+                    }
+                    else if (d.Category.StartsWith(ShaderCompileVerifier.PreExistingCategoryPrefix)) preExisting++;
+                    else other++;
+                }
+                EditorUtility.DisplayDialog("lilToon Shader Merger",
+                    $"Caused by merging: {mergeErrors} error(s), {mergeWarnings} warning(s)\n" +
+                    $"Pre-existing in original shaders: {preExisting}\n" +
+                    (other > 0 ? $"Other: {other}\n" : "") +
+                    "\nDetails are in the Console.", "OK");
+            }
         }
 
-        static void ReportResult(BuildResult r)
+        static bool LogDiagnostics(BuildResult r)
         {
             var hasError = false;
             foreach (var d in r.Diagnostics)
@@ -44,7 +65,12 @@ namespace Narazaka.Unity.LilToonShaderMerger
                 if (d.Severity == Severity.Error) { Debug.LogError(d.ToString()); hasError = true; }
                 else Debug.LogWarning(d.ToString());
             }
-            if (hasError)
+            return hasError;
+        }
+
+        static void ReportResult(BuildResult r)
+        {
+            if (LogDiagnostics(r))
                 EditorUtility.DisplayDialog("lilToon Shader Merger", $"Build failed with {r.Diagnostics.Count} diagnostic(s). Check Console.", "OK");
             else
                 EditorUtility.DisplayDialog("lilToon Shader Merger", $"Success. Wrote {r.WrittenFiles.Count} file(s).", "OK");

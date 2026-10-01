@@ -16,7 +16,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             var d = CustomHlslParser.Parse(input);
             CollectionAssert.AreEqual(
                 new[] { "float _effect;", "float _strength;", "float4 _color;" },
-                d.MultilineMacros["LIL_CUSTOM_PROPERTIES"]
+                d.FindDefine("LIL_CUSTOM_PROPERTIES").Body
             );
         }
 
@@ -30,7 +30,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             var d = CustomHlslParser.Parse(input);
             CollectionAssert.AreEqual(
                 new[] { "sampler2D _Mask;" },
-                d.MultilineMacros["LIL_CUSTOM_TEXTURES"]
+                d.FindDefine("LIL_CUSTOM_TEXTURES").Body
             );
         }
 
@@ -46,7 +46,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             var d = CustomHlslParser.Parse(input);
             CollectionAssert.AreEqual(
                 new[] { "float _real;" },
-                d.MultilineMacros["LIL_CUSTOM_PROPERTIES"]
+                d.FindDefine("LIL_CUSTOM_PROPERTIES").Body
             );
         }
 
@@ -55,7 +55,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         {
             const string input = "// no macros";
             var d = CustomHlslParser.Parse(input);
-            Assert.That(d.MultilineMacros.ContainsKey("LIL_CUSTOM_PROPERTIES"), Is.False);
+            Assert.That(d.FindDefine("LIL_CUSTOM_PROPERTIES"), Is.Null);
         }
 
         [Test]
@@ -67,9 +67,9 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
 //#define LIL_REQUIRE_APP_COLOR
 ";
             var d = CustomHlslParser.Parse(input);
-            Assert.That(d.FlagMacros, Contains.Item("LIL_REQUIRE_APP_POSITION"));
-            Assert.That(d.FlagMacros, Contains.Item("LIL_REQUIRE_APP_NORMAL"));
-            Assert.That(d.FlagMacros, Does.Not.Contain("LIL_REQUIRE_APP_COLOR"));
+            Assert.That(d.FindDefine("LIL_REQUIRE_APP_POSITION"), Is.Not.Null);
+            Assert.That(d.FindDefine("LIL_REQUIRE_APP_NORMAL"), Is.Not.Null);
+            Assert.That(d.FindDefine("LIL_REQUIRE_APP_COLOR"), Is.Null);
         }
 
         [Test]
@@ -77,7 +77,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         {
             const string input = "#define LIL_V2F_FORCE_TEXCOORD2";
             var d = CustomHlslParser.Parse(input);
-            Assert.That(d.FlagMacros, Contains.Item("LIL_V2F_FORCE_TEXCOORD2"));
+            Assert.That(d.FindDefine("LIL_V2F_FORCE_TEXCOORD2"), Is.Not.Null);
         }
 
         [Test]
@@ -85,7 +85,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         {
             const string input = "#define LIL_CUSTOM_VERT_COPY";
             var d = CustomHlslParser.Parse(input);
-            Assert.That(d.FlagMacros, Contains.Item("LIL_CUSTOM_VERT_COPY"));
+            Assert.That(d.FindDefine("LIL_CUSTOM_VERT_COPY"), Is.Not.Null);
         }
 
         [Test]
@@ -99,7 +99,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             var d = CustomHlslParser.Parse(input);
             CollectionAssert.AreEqual(
                 new[] { "positionOS.xyz += offset;", "if(_normal==1){input.normalOS = newNormal;}" },
-                d.MultilineMacros["LIL_CUSTOM_VERTEX_OS"]
+                d.FindDefine("LIL_CUSTOM_VERTEX_OS").Body
             );
         }
 
@@ -111,7 +111,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
     fd.col *= myColor;
 ";
             var d = CustomHlslParser.Parse(input);
-            CollectionAssert.AreEqual(new[] { "fd.col *= myColor;" }, d.MultilineMacros["BEFORE_OUTPUT"]);
+            CollectionAssert.AreEqual(new[] { "fd.col *= myColor;" }, d.FindDefine("BEFORE_OUTPUT").Body);
         }
 
         [Test]
@@ -122,7 +122,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
     fd.N = newNormal;
 ";
             var d = CustomHlslParser.Parse(input);
-            CollectionAssert.AreEqual(new[] { "fd.N = newNormal;" }, d.MultilineMacros["OVERRIDE_NORMAL"]);
+            CollectionAssert.AreEqual(new[] { "fd.N = newNormal;" }, d.FindDefine("OVERRIDE_NORMAL").Body);
         }
     }
 }

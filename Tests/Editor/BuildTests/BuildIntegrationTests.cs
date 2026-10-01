@@ -214,6 +214,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         [Test]
         public void Build_SameSourcesIntoSecondFolder_FailsAtomicallyOnGuidCollision()
         {
+            LogAssert.ignoreFailingMessages = true; // SetUp での設定はテスト開始時に戻されるので、ImportAsset の前に設定し直す
             var outA = "Assets/_temp_merge_out_n1";
             var outB = "Assets/_temp_merge_out_n2";
             AssetDatabase.CreateFolder("Assets", "_temp_merge_out_n1");

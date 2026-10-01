@@ -136,6 +136,30 @@ namespace Narazaka.Unity.LilToonShaderMerger
         // avoid Unity re-importing/recompiling unrelated project assets as a side effect.
         public static BuildResult Build(LilToonShaderMergerSettings s, bool refreshAssetDatabase = true) => RunInternal(s, emit: true, refreshAssetDatabase);
 
+        // Build 済みの出力を実際にコンパイルして検証する。シェーダー数に比例して時間がかかるので Build とは別に実行する
+        public static BuildResult VerifyCompile(LilToonShaderMergerSettings s)
+        {
+            var result = new BuildResult();
+            var outFolder = s.outputFolder != null ? AssetDatabase.GetAssetPath(s.outputFolder) : null;
+            if (string.IsNullOrEmpty(outFolder) || !Directory.Exists(outFolder))
+            {
+                result.Diagnostics.Add(new Diagnostic { Severity = Severity.Error, Category = "output", Message = "Output folder not set or not built yet" });
+                return result;
+            }
+            var sources = new List<(string, string)>();
+            foreach (var f in s.sourceFolders)
+            {
+                if (f == null) continue;
+                var folder = AssetDatabase.GetAssetPath(f);
+                var datasPath = Path.Combine(folder, "lilCustomShaderDatas.lilblock");
+                var datas = File.Exists(datasPath) ? LilBlockParser.ParseDatas(File.ReadAllText(datasPath)) : new CustomShaderDatas();
+                sources.Add((SourceKey(folder, datas), folder));
+            }
+            ShaderCompileVerifier.VerifyMerged(outFolder, sources, result.Diagnostics);
+            result.Success = !HasErrors(result.Diagnostics);
+            return result;
+        }
+
         static BuildResult RunInternal(LilToonShaderMergerSettings s, bool emit, bool refreshAssetDatabase)
         {
             var result = new BuildResult();
@@ -169,8 +193,8 @@ namespace Narazaka.Unity.LilToonShaderMerger
             if (HasErrors(result.Diagnostics)) return result;
 
             // Merge dimensions
-            var hlslSources = new List<CustomHlslData>();
-            foreach (var p in parsed) hlslSources.Add(p.Hlsl);
+            var hlslSources = new List<(string, CustomHlslData)>();
+            foreach (var p in parsed) hlslSources.Add((p.SourceKey, p.Hlsl));
             var mergedHlsl = MacroMerger.Merge(hlslSources, s.functionConflict, result.Diagnostics);
 
             // custom.hlsl の派生 (custom_fur.hlsl 等) は、派生を持つソースはそれを、持たないソースは custom.hlsl を入力に merge する
@@ -179,11 +203,11 @@ namespace Narazaka.Unity.LilToonShaderMerger
             var mergedVariants = new Dictionary<string, MergedHlsl>(System.StringComparer.OrdinalIgnoreCase);
             foreach (var name in LilContainerEmitter.CollectCustomHlslVariants(sourceFolderPaths))
             {
-                var variantSources = new List<CustomHlslData>();
+                var variantSources = new List<(string, CustomHlslData)>();
                 foreach (var p in parsed)
                 {
                     var vp = Path.Combine(p.FolderPath, name);
-                    variantSources.Add(File.Exists(vp) ? CustomHlslParser.Parse(ExpandCustomHlslInclude(vp, p.FolderPath)) : p.Hlsl);
+                    variantSources.Add((p.SourceKey, File.Exists(vp) ? CustomHlslParser.Parse(ExpandCustomHlslInclude(vp, p.FolderPath)) : p.Hlsl));
                 }
                 mergedVariants[name] = MacroMerger.Merge(variantSources, s.functionConflict, result.Diagnostics);
             }
@@ -512,6 +536,10 @@ namespace Narazaka.Unity.LilToonShaderMerger
             return CustomHlslIncludeLine.Replace(text, _ => customText);
         }
 
+        // 優先順 = ShaderName (Datas) > フォルダ名 (フォルダが "Shaders" 等で衝突しやすいのを避ける)
+        static string SourceKey(string folder, CustomShaderDatas datas) =>
+            !string.IsNullOrEmpty(datas.ShaderName) ? datas.ShaderName : Path.GetFileName(folder.TrimEnd('/', '\\'));
+
         static bool HasErrors(List<Diagnostic> diags)
         {
             foreach (var d in diags) if (d.Severity == Severity.Error) return true;
@@ -555,10 +583,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
             var datas = Path.Combine(folder, "lilCustomShaderDatas.lilblock");
             if (File.Exists(datas)) src.Datas = LilBlockParser.ParseDatas(File.ReadAllText(datas));
 
-            // SourceKey: 優先順 = ShaderName (Datas) > フォルダ名 (フォルダが "Shaders" 等で衝突しやすいのを避ける)
-            src.SourceKey = !string.IsNullOrEmpty(src.Datas.ShaderName)
-                ? src.Datas.ShaderName
-                : Path.GetFileName(folder.TrimEnd('/', '\\'));
+            src.SourceKey = SourceKey(folder, src.Datas);
 
             var props = Path.Combine(folder, "lilCustomShaderProperties.lilblock");
             if (File.Exists(props)) src.Properties = LilBlockParser.ParseProperties(File.ReadAllText(props));
