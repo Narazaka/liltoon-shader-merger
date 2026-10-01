@@ -28,6 +28,11 @@ https://github.com/Narazaka/liltoon-shader-merger/releases/latest から `net.na
 
 ## Changelog
 
+- 0.4.0-alpha.3:
+  - (fix): `custom.hlsl` の `#define` 以外の内容（`#if` などの条件分岐、引数付きマクロ、`#undef`、関数定義や `#include`）が合成時に黙って捨てられていた問題を修正。条件分岐はそのまま保持して出力する。たとえば msdfmask の `#if !defined(LIL_LITE)` 内の定義が、これまでは Lite 版にも無条件で入っていた
+  - (feature): `BEFORE_*` などの連結型マクロを条件付きで定義しているソースがあっても、ソースごとの補助マクロに分けて元の条件のまま連結するようにした
+  - (feature): Merger Settings に「Verify Compile」ボタンを追加。Build 済みの出力シェーダーを実際にコンパイルし、元のシェーダーにも同じメッセージがあるかどうかで `[CAUSED BY MERGE]`（合成で生じたもの）と `[PRE-EXISTING in <ソース>]`（元シェーダー由来）に分けてコンソールに出す。元シェーダー由来のエラーは Warning として扱う
+  - (change): コンソールに出す診断の書式を `[Error][分類] 本文` に変更
 - 0.4.0-alpha.2:
   - (feature): `.lilcontainer` の構造（`HLSLINCLUDE` 以外の `lilSubShaderBRP` 等の指定や自前の `SubShader`）を lilToon のカスタムシェーダーテンプレートと照合し、テンプレートから書き換えたソースの構造を `sourceFolders` の順番に関係なく土台にするようにした。これまでは常に先頭ソースの構造が使われ、後ろのソースの書き換え（もっちりシェーダーの tess 系の自前 SubShader など）が黙って捨てられていた
   - (feature): 同じ `.lilcontainer` を複数のソースが別々に書き換えている場合と、あるソースの `HLSLINCLUDE` を合成後の構造に置けない場合は、Error で停止するようにした。DryRun でも検出される
