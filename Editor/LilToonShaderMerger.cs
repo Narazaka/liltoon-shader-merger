@@ -252,6 +252,22 @@ namespace Narazaka.Unity.LilToonShaderMerger
                 if (merged != null) mergedContainers[fn] = merged;
             }
 
+            // 出力はソースの container の和集合なので、あるソースが用意していない種類にもそのソースのコードが入る。
+            // 動くこともあるが作者の想定外なので、どの種類がどのソースに無いかを知らせる
+            foreach (var p in parsed)
+            {
+                var missing = new List<string>();
+                foreach (var kv in mergedContainers)
+                    if (!File.Exists(Path.Combine(p.FolderPath, kv.Key))) missing.Add(LilContainerEmitter.VariantDisplayName(kv.Key, kv.Value));
+                if (missing.Count == 0) continue;
+                result.Diagnostics.Add(new Diagnostic
+                {
+                    Severity = Severity.Warning,
+                    Category = ShaderCompileVerifier.NotProvidedCategoryPrefix + p.SourceKey,
+                    Message = $"{missing.Count} shader variant(s) are not provided by this source; they include its code but may not work (Verify Compile checks them): {string.Join(", ", missing)}",
+                });
+            }
+
             if (HasErrors(result.Diagnostics)) return result;
             if (!emit) { result.Success = true; return result; }
 

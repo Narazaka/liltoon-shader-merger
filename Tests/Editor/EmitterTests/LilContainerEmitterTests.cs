@@ -191,6 +191,15 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             Assert.That(diags.Exists(d => d.Severity == Severity.Error && d.Message.Contains("[a]") && d.Message.Contains("[b]")));
         }
 
+        [TestCase("ltsl_cutout.lilcontainer", "Shader \"Hidden/*LIL_SHADER_NAME*/Lite/Cutout\"\n{\n}", "Lite/Cutout")]
+        [TestCase("lts_fakeshadow.lilcontainer", "Shader \"*LIL_SHADER_NAME*/[Optional] FakeShadow\"\n{\n}", "[Optional] FakeShadow")]
+        [TestCase("ltspass_cutout.lilcontainer", "Shader \"Hidden/*LIL_SHADER_NAME*/ltspass_cutout\"\n{\n}", "ltspass_cutout (internal)")]
+        [TestCase("broken.lilcontainer", "no shader declaration", "broken")]
+        public void VariantDisplayName_FromShaderDeclaration(string fileName, string text, string expected)
+        {
+            Assert.That(LilContainerEmitter.VariantDisplayName(fileName, text), Is.EqualTo(expected));
+        }
+
         [Test]
         public void StructureHash_IgnoresCommentsWhitespaceAndHlslIncludeBody()
         {

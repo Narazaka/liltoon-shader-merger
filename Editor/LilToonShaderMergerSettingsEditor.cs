@@ -38,7 +38,7 @@ namespace Narazaka.Unity.LilToonShaderMerger
             {
                 var result = LilToonShaderMerger.VerifyCompile(s);
                 LogDiagnostics(result);
-                int mergeErrors = 0, mergeWarnings = 0, preExisting = 0, other = 0;
+                int mergeErrors = 0, mergeWarnings = 0, preExisting = 0, notProvided = 0, other = 0;
                 foreach (var d in result.Diagnostics)
                 {
                     if (d.Category == ShaderCompileVerifier.MergeCausedCategory)
@@ -47,11 +47,13 @@ namespace Narazaka.Unity.LilToonShaderMerger
                         else mergeWarnings++;
                     }
                     else if (d.Category.StartsWith(ShaderCompileVerifier.PreExistingCategoryPrefix)) preExisting++;
+                    else if (d.Category.StartsWith(ShaderCompileVerifier.NotProvidedCategoryPrefix)) notProvided++;
                     else other++;
                 }
                 EditorUtility.DisplayDialog("lilToon Shader Merger",
                     $"Caused by merging: {mergeErrors} error(s), {mergeWarnings} warning(s)\n" +
                     $"Pre-existing in original shaders: {preExisting}\n" +
+                    $"In variants not provided by a source: {notProvided}\n" +
                     (other > 0 ? $"Other: {other}\n" : "") +
                     "\nDetails are in the Console.", "OK");
             }

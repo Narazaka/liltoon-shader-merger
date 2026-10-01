@@ -15,7 +15,7 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         {
             "Assets/_batch_merge_tests", "Assets/_motchiri_uzumore_test", "Assets/_temp_merge_out",
             "Assets/_temp_merge_out_det", "Assets/_temp_merge_out_n1", "Assets/_temp_merge_out_n2",
-            "Assets/_temp_merge_out_overwrite", "Assets/_temp_merge_out_extra",
+            "Assets/_temp_merge_out_overwrite", "Assets/_temp_merge_out_extra", "Assets/_temp_missing_container",
         };
 
         [SetUp]
@@ -45,6 +45,30 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
             var msgs = string.Join("; ", result.Diagnostics);
             Assert.That(result.Diagnostics, Is.Empty, "expected no diagnostics, got: " + msgs);
             Object.DestroyImmediate(settings);
+        }
+
+        [Test]
+        public void DryRun_ContainerMissingFromSource_ReportsNotProvided()
+        {
+            LogAssert.ignoreFailingMessages = true; // SetUp での設定はテスト開始時に戻されるので、CopyAsset の前に設定し直す
+            const string missing = "Assets/_temp_missing_container";
+            Assert.That(AssetDatabase.CopyAsset($"{FixtureRoot}/sample_b", missing), Is.True);
+            AssetDatabase.DeleteAsset($"{missing}/lts.lilcontainer");
+
+            var settings = ScriptableObject.CreateInstance<LilToonShaderMergerSettings>();
+            settings.shaderName = "Test/Missing";
+            settings.sourceFolders = new[] {
+                AssetDatabase.LoadAssetAtPath<DefaultAsset>($"{FixtureRoot}/sample_a"),
+                AssetDatabase.LoadAssetAtPath<DefaultAsset>(missing),
+            };
+            var result = LilToonShaderMerger.DryRun(settings);
+            Object.DestroyImmediate(settings);
+
+            Assert.That(result.Success, Is.True, string.Join("; ", result.Diagnostics));
+            var d = result.Diagnostics.Find(x => x.Category == ShaderCompileVerifier.NotProvidedCategoryPrefix + "sample_b");
+            Assert.That(d, Is.Not.Null, string.Join("; ", result.Diagnostics));
+            Assert.That(d.Severity, Is.EqualTo(Severity.Warning));
+            Assert.That(d.Message, Does.Contain("lilToon"));
         }
 
         [Test]

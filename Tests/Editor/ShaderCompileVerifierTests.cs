@@ -70,6 +70,17 @@ namespace Narazaka.Unity.LilToonShaderMerger.Tests
         }
 
         [Test]
+        public void VerifyMerged_ErrorInVariantMissingFromSource_IsNotProvidedWarning()
+        {
+            Write("OnlyInOutput", "_Undeclared", "out");
+            Write("Other", "1", "src");
+            var diags = new List<Diagnostic>();
+            ShaderCompileVerifier.VerifyMerged($"{Dir}/out", new[] { ("src", $"{Dir}/src") }, diags, "*.shader");
+            Assert.That(diags.Exists(d => d.Severity == Severity.Error), Is.False, string.Join("\n", diags));
+            Assert.That(diags.Exists(d => d.Severity == Severity.Warning && d.Message.Contains("_Undeclared") && d.Category == ShaderCompileVerifier.NotProvidedCategoryPrefix + "src"), string.Join("\n", diags));
+        }
+
+        [Test]
         public void Verify_UndeclaredIdentifier_ReportsError()
         {
             var path = Write("Broken", "_Undeclared");

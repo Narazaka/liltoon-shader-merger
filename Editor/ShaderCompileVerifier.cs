@@ -13,43 +13,57 @@ namespace Narazaka.Unity.LilToonShaderMerger
     {
         public const string MergeCausedCategory = "CAUSED BY MERGE";
         public const string PreExistingCategoryPrefix = "PRE-EXISTING in ";
+        public const string NotProvidedCategoryPrefix = "NOT PROVIDED BY ";
 
-        // 合成出力の .lilcontainer を検証する。同名の元 .lilcontainer でも同じメッセージが出るなら合成で生じたものではないので
-        // "pre-existing in <ソース>" に分類し、エラーも Warning に落とす。合成で生じたものを先に並べる。
-        // 元シェーダーはメッセージが出た container についてだけコンパイルする
+        // 合成出力の .lilcontainer を検証し、メッセージを次の優先順で分類する (合成が原因のものを先に並べる)。
+        // 1. 同名の元 .lilcontainer でも同じメッセージが出る → "PRE-EXISTING in <ソース>"
+        // 2. その種類 (.lilcontainer) を用意していないソースがある → "NOT PROVIDED BY <ソース>"。作者の想定外の種類にそのソースのコードが入ったもの
+        // 3. それ以外 → "CAUSED BY MERGE"
+        // 1, 2 は合成処理の不具合ではないのでエラーも Warning に落とす。元シェーダーはメッセージが出た container についてだけコンパイルする
         public static void VerifyMerged(string outputFolder, IReadOnlyList<(string label, string folder)> sources, List<Diagnostic> diags, string pattern = "*.lilcontainer")
         {
             var seen = new HashSet<string>();
             var mergeCaused = new List<Diagnostic>();
-            var preExisting = new List<Diagnostic>();
+            var explained = new List<Diagnostic>();
             foreach (var path in Directory.GetFiles(outputFolder, pattern))
             {
+                var fileName = Path.GetFileName(path);
                 var shader = Compile(path.Replace('\\', '/'), diags);
                 if (shader == null) continue;
                 Dictionary<string, string> originalMessages = null; // メッセージ → それが出た元ソース
+                var notProvidedBy = new List<string>();
+                foreach (var (label, folder) in sources)
+                    if (!File.Exists(Path.Combine(folder, fileName))) notProvidedBy.Add(label);
                 foreach (var m in ShaderUtil.GetShaderMessages(shader))
                 {
                     var message = m.message.Trim();
                     if (!seen.Add($"{message}|{m.file}|{m.line}")) continue;
                     var d = ToDiagnostic(shader, m);
-                    if (originalMessages == null) originalMessages = OriginalMessages(Path.GetFileName(path), sources, diags);
+                    var codeOf = InsertSectionSource(MessageFile(shader, m.file), m.line);
+                    if (originalMessages == null) originalMessages = OriginalMessages(fileName, sources, diags);
                     if (originalMessages.TryGetValue(message, out var original))
                     {
                         d.Severity = Severity.Warning;
                         d.Category = PreExistingCategoryPrefix + original;
-                        preExisting.Add(d);
+                        explained.Add(d);
+                        continue;
+                    }
+                    if (codeOf != null) d.Message = $"[code: {codeOf}] {d.Message}";
+                    if (notProvidedBy.Count > 0)
+                    {
+                        d.Severity = Severity.Warning;
+                        d.Category = NotProvidedCategoryPrefix + string.Join(", ", notProvidedBy);
+                        explained.Add(d);
                     }
                     else
                     {
                         d.Category = MergeCausedCategory;
-                        var codeOf = InsertSectionSource(MessageFile(shader, m.file), m.line);
-                        if (codeOf != null) d.Message = $"[code: {codeOf}] {d.Message}";
                         mergeCaused.Add(d);
                     }
                 }
             }
             diags.AddRange(mergeCaused);
-            diags.AddRange(preExisting);
+            diags.AddRange(explained);
         }
 
         // 合成後の custom_insert.hlsl はソースごとに "// --- <sourceKey> ---" で区切って連結しているので、行からソースが分かる

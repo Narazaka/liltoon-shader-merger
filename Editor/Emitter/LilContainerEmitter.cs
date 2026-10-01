@@ -244,6 +244,21 @@ namespace Narazaka.Unity.LilToonShaderMerger
             return names;
         }
 
+        static readonly Regex ShaderNameDecl = new Regex(@"Shader\s+""([^""]*)""", RegexOptions.Compiled);
+
+        // ユーザーが目にするシェーダーの種類名 (例: "Lite/Cutout", "[Optional] FakeShadow")。
+        // container が宣言するシェーダー名の "*LIL_SHADER_NAME*/" より後ろ。ltspass_* は UsePass 用の内部シェーダー
+        public static string VariantDisplayName(string fileName, string containerText)
+        {
+            var m = ShaderNameDecl.Match(containerText);
+            if (!m.Success) return Path.GetFileNameWithoutExtension(fileName);
+            var name = m.Groups[1].Value;
+            const string placeholder = "*LIL_SHADER_NAME*/";
+            var i = name.IndexOf(placeholder, System.StringComparison.Ordinal);
+            if (i >= 0) name = name.Substring(i + placeholder.Length);
+            return name.StartsWith("ltspass_") ? name + " (internal)" : name;
+        }
+
         // ファイル名 union を返す
         public static IEnumerable<string> CollectContainerFiles(IEnumerable<string> sourceFolders)
         {
